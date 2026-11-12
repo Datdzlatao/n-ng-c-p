@@ -86,6 +86,22 @@ Tích hợp từ dự án **`stem`**:
 * **The Watcher**: Giám sát đột biến môi trường. Khi phát hiện **mùi hôi chuồng cao (`smell_level >= 10.0`)** hoặc nhiệt độ quá nóng, Watcher **tự động kích hoạt quạt thông gió** tại chuồng đó và đẩy cảnh báo realtime qua WebSocket.
 * **The Scheduler**: 07:00 sáng hàng ngày quét việc cần làm hôm nay, thức ăn sắp hết, vật nuôi bị bệnh, cây sắp thu hoạch -> Gemini viết bản tin ngắn gọn, thúc đẩy công việc và gửi tới Web/App.
 
+### 5. Quản Lý Nhân Sự & Điểm Danh FaceID ([`standalone_ai_engine/`](file:///storage/emulated/0/2/3/standalone_ai_engine/))
+Tích hợp từ module **Standalone AI Vision Engine**:
+* **Nhận diện khuôn mặt & Chống giả mạo**: Kết nối YuNet + SFace (128D embeddings) và MiniFASNet Liveness qua Microservice REST API hoặc Local Fallback.
+* **FastMCP Tools & Resources**:
+  * `resource://staff/today`: Tra cứu danh sách nhân sự đã có mặt hôm nay.
+  * `resource://staff/list`: Toàn bộ nhân sự trang trại và chuồng phụ trách.
+  * `get_staff_list(pen_id)`: Tra cứu danh sách theo chuồng.
+  * `check_in_staff_face(staff_id, pen_id, note)`: Điểm danh vào ca trực qua FaceID.
+  * `get_today_attendance_summary()`: Báo cáo tổng hợp điểm danh trong ngày.
+* **FastAPI Endpoints**:
+  * `GET /api/staff` & `POST /api/staff`: Quản lý hồ sơ nhân sự.
+  * `POST /api/staff/checkin`: Điểm danh FaceID tự động qua ảnh Base64 hoặc staff_id.
+  * `POST /api/staff/checkin-upload`: Tải file ảnh chụp trực tiếp từ camera.
+  * `POST /api/staff/enroll`: Đăng ký FaceID mới và lưu vào cơ sở dữ liệu.
+* **Realtime WebSocket & Web Dashboard**: Tự động phát sự kiện `staff_checkin` lên Dashboard, cập nhật số lượng nhân sự vào ca trực tiếp.
+
 ---
 
 ## 🛠️ Hướng Dẫn Vận Hành
@@ -108,4 +124,5 @@ Nếu cần kết nối với MCP Client ngoài (Claude Desktop, Cursor, Gemini 
 ### 3. Kiểm Tra Toàn Bộ Hệ Thống (E2E Test)
 ```bash
 .venv/bin/python scripts/verify_farm_system.py
+.venv/bin/python scripts/verify_staff_workflow.py
 ```

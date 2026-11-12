@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-2.0-flash"
 
+    # Standalone AI Vision Engine settings
+    VISION_ENGINE_URL: str = "http://localhost:8001"
+
     # MCP Server settings
     MCP_SERVER_NAME: str = "SmartManagerMCP"
     MCP_TRANSPORT: str = "stdio"

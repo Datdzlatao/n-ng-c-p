@@ -158,6 +158,29 @@ CREATE TABLE IF NOT EXISTS public.chat_messages (
     created_at TIMESTAMPTZ DEFAULT now()
 );
 
+-- Phân hệ Quản Lý Nhân Sự & Điểm Danh FaceID (Standalone AI Vision Engine)
+CREATE TABLE IF NOT EXISTS public.staff (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    role TEXT DEFAULT 'Kỹ thuật viên',
+    pen_id TEXT REFERENCES public.pens(id) ON DELETE SET NULL,
+    phone TEXT,
+    avatar_url TEXT,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.staff_attendance (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    staff_id TEXT REFERENCES public.staff(id) ON DELETE CASCADE,
+    staff_name TEXT NOT NULL,
+    pen_id TEXT REFERENCES public.pens(id) ON DELETE SET NULL,
+    status TEXT DEFAULT 'present',
+    confidence DOUBLE PRECISION DEFAULT 1.0,
+    is_real BOOLEAN DEFAULT true,
+    note TEXT,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
 -- --------------------------------------------------------------------
 -- 2. NÂNG CẤP VÀ SỬA CÁC CỘT BỊ THIẾU TRONG CÁC BẢNG HIỆN CÓ
 -- --------------------------------------------------------------------
@@ -197,7 +220,7 @@ BEGIN
           AND tablename IN ('pens', 'env_logs', 'devices', 'animals', 'health_logs', 
                             'weight_logs', 'feed_logs', 'crops', 'crop_growth_logs', 
                             'crop_care_logs', 'inventory', 'inventory_logs', 'usage_logs', 
-                            'alerts', 'schedules', 'field', 'chat_messages')
+                            'alerts', 'schedules', 'field', 'chat_messages', 'staff', 'staff_attendance')
     LOOP
         EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY;', tbl);
         EXECUTE format('DROP POLICY IF EXISTS allow_all_backend_ops ON public.%I;', tbl);
@@ -257,3 +280,12 @@ INSERT INTO public.alerts (pen_id, alert_type, message, is_read)
 VALUES 
     ('123', 'SYSTEM', 'Hệ thống Smart Farm AI Agent đã khởi động và kết nối chuồng 123.', false)
 ON CONFLICT DO NOTHING;
+
+-- Bước 4.6: Nạp dữ liệu nhân sự mẫu ban đầu
+INSERT INTO public.staff (id, name, role, pen_id, phone)
+VALUES 
+    ('NV01', 'Nguyễn Văn An', 'Quản lý trang trại', '123', '0901234567'),
+    ('NV02', 'Trần Thị Bình', 'Bác sĩ thú y', 'PEN-ISO-01', '0912345678'),
+    ('NV03', 'Lê Hoàng Long', 'Kỹ thuật viên IoT', 'PEN-A02', '0923456789'),
+    ('NV04', 'Phạm Văn Cường', 'Kỹ sư nông học', 'PEN-B01', '0934567890')
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, role = EXCLUDED.role;

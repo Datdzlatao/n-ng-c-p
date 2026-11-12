@@ -23,6 +23,11 @@ from app.mcp.mcp_server import (
     create_system_alert,
     search_agricultural_knowledge,
     diagnose_agricultural_disease,
+    get_today_staff_attendance,
+    get_all_staff_resource,
+    get_staff_list,
+    check_in_staff_face,
+    get_today_attendance_summary,
 )
 
 logger = logging.getLogger("smart_manager.agent")
@@ -56,6 +61,7 @@ class AIAgentService:
         inventory_ctx = get_low_stock_inventory()
         animals_ctx = get_animals_attention()
         crops_ctx = get_crops_harvest()
+        staff_ctx = get_today_staff_attendance()
 
         current_time = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
@@ -81,6 +87,9 @@ NGỮ CẢNH TOÀN BỘ CÁC CHUỒNG TRẠI VÀ TRANG TRẠI (TỪ GIAO THỨC 
 
 [MCP Resource: resource://inventory/low-stock - Thức ăn, thuốc, vật tư chạm ngưỡng an toàn]
 {inventory_ctx}
+
+[MCP Resource: resource://staff/today - Danh sách nhân sự đã có mặt / điểm danh hôm nay]
+{staff_ctx}
 --------------------------------------------------
 
 CÁC CÔNG CỤ (MCP TOOLS) BẠN CÓ:
@@ -95,6 +104,9 @@ CÁC CÔNG CỤ (MCP TOOLS) BẠN CÓ:
 9. `create_system_alert(alert_type, message, pen_id)`: Phát cảnh báo nguy cơ chuồng trại qua WebSocket.
 10. `search_agricultural_knowledge(query, limit)`: TRA CỨU CƠ SỞ TRI THỨC RAG (Pinecone Knowledge Base) về phác đồ điều trị bệnh gia súc/cây trồng, thông tin thuốc thú y, bệnh lý nông nghiệp.
 11. `diagnose_agricultural_disease(symptoms_or_description, species)`: CHẨN ĐOÁN BỆNH LÝ & TRÍCH XUẤT PHÁC ĐỒ ĐIỀU TRỊ chuyên sâu từ cơ sở tri thức RAG.
+12. `get_staff_list(pen_id)`: Tra cứu danh sách nhân sự trang trại, phân công ca trực và chuồng phụ trách.
+13. `check_in_staff_face(staff_id, pen_id, note)`: Điểm danh vào ca làm việc cho nhân viên bằng FaceID nhận diện khuôn mặt.
+14. `get_today_attendance_summary()`: Xem tổng hợp tình hình điểm danh nhân sự hôm nay (ai đã có mặt, ai chưa đến).
 
 NHIỆM VỤ CỦA BẠN:
 - Hệ thống hỗ trợ RẤT NHIỀU CHUỒNG KHÁC NHAU (ví dụ: Chuồng Heo Khu A1 '123', Chuồng Heo Khu A2 'PEN-A02', Khu Cách Ly 'PEN-ISO-01', Nhà Màng 'PEN-B01'...).
@@ -255,10 +267,36 @@ NHIỆM VỤ CỦA BẠN:
                 f"{rag_diag.get('answer')}"
             )
 
+        # 9. Action: QUẢN LÝ NHÂN SỰ & ĐIỂM DANH FACE ID
+        elif any(k in msg for k in ["nhân sự", "nhân viên", "điểm danh", "ai đang trực", "vào ca", "chấm công", "faceid", "khuôn mặt"]):
+            if any(k in msg for k in ["điểm danh", "vào ca", "chấm công"]) and any(k in msg for k in ["nv", "tech", "cho", "bằng"]):
+                id_match = re.findall(r"(nv[0-9]+|tech[\-_]?[0-9]+)", msg)
+                staff_id = id_match[0].upper() if id_match else "NV01"
+                pen_id = "123"
+                if "a02" in msg or "a2" in msg:
+                    pen_id = "PEN-A02"
+                elif "cách ly" in msg or "iso" in msg:
+                    pen_id = "PEN-ISO-01"
+                elif "b01" in msg or "b1" in msg:
+                    pen_id = "PEN-B01"
+
+                res = check_in_staff_face(staff_id=staff_id, pen_id=pen_id, note="Điểm danh qua chat AI")
+                executed_tools.append({"tool": "check_in_staff_face", "args": {"staff_id": staff_id, "pen_id": pen_id}, "result": res})
+                reply_lines.append(f"🤖 [Smart Farm Agent]: {res}")
+            elif any(k in msg for k in ["danh sách", "tất cả", "các nhân viên", "có ai"]):
+                res = get_staff_list()
+                executed_tools.append({"tool": "get_staff_list", "args": {}, "result": res})
+                reply_lines.append(f"🤖 [Smart Farm Agent]: Danh sách nhân sự trang trại:\n{res}")
+            else:
+                summary = get_today_attendance_summary()
+                executed_tools.append({"tool": "get_today_attendance_summary", "args": {}, "result": summary})
+                reply_lines.append(f"🤖 [Smart Farm Agent]: Tình hình điểm danh nhân sự hôm nay:\n{summary}")
+
         else:
             reply_lines.append(
                 f"🤖 [Smart Farm AI Agent]: Tôi đã nhận yêu cầu: '{user_message}'.\n"
                 "Tôi hỗ trợ bạn quản lý linh hoạt giữa các chuồng:\n"
+                "- 👤 Nhân sự FaceID: 'Điểm danh cho nhân viên NV01 tại chuồng 123', 'Danh sách nhân sự trang trại'\n"
                 "- 🚚 Đổi chuồng: 'Chuyển con HEO-102 sang chuồng cách ly PEN-ISO-01'\n"
                 "- 🩺 Chẩn đoán RAG: 'Chẩn đoán bệnh heo bị sốt cao tai tím', 'Phác đồ điều trị bệnh đạo ôn'\n"
                 "- 🔎 Tra cứu chuồng: 'Xem thông tin chuồng PEN-A02', 'Danh sách các chuồng'\n"
@@ -308,6 +346,9 @@ NHIỆM VỤ CỦA BẠN:
                 create_system_alert,
                 search_agricultural_knowledge,
                 diagnose_agricultural_disease,
+                get_staff_list,
+                check_in_staff_face,
+                get_today_attendance_summary,
             ]
 
             config = types.GenerateContentConfig(

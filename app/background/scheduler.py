@@ -57,6 +57,14 @@ async def run_morning_briefing() -> dict:
     except Exception as e:
         logger.warning(f"Scheduler could not read crops: {e}")
 
+    today_staff = []
+    try:
+        from app.db.repositories.staff import StaffRepository
+        staff_repo = StaffRepository()
+        today_staff = staff_repo.get_today_attendance()
+    except Exception as e:
+        logger.warning(f"Scheduler could not read staff attendance: {e}")
+
     # Xây dựng nội dung tóm tắt cho Gemini
     tasks_summary = "\n".join([f"- {t.get('task_name')} (Ghi chú: {t.get('note', '')})" for t in pending_tasks]) or "Hôm nay không có lịch trình nào."
     stocks_summary = "\n".join([f"- {i.get('name')}: còn {i.get('quantity')} {i.get('unit')} (Ngưỡng an toàn: {i.get('min_threshold')} {i.get('unit')})" for i in low_stocks]) or "Vật tư & thức ăn đều an toàn."
@@ -89,6 +97,7 @@ async def run_morning_briefing() -> dict:
     if not briefing_text:
         briefing_text = (
             f"🌾 BẢN TIN TRANG TRẠI BUỔI SÁNG ({today_str}):\n"
+            f"👤 Nhân sự có mặt: {len(today_staff)} người đã vào ca trực.\n"
             f"📋 Việc hôm nay: {len(pending_tasks)} nhiệm vụ cần làm.\n"
             f"⚠️ Kho thiếu: {len(low_stocks)} mặt hàng chạm ngưỡng.\n"
             f"🩺 Vật nuôi cần chăm sóc: {len(sick_animals)} cá thể.\n"
@@ -98,6 +107,7 @@ async def run_morning_briefing() -> dict:
     briefing_payload = {
         "date": today_str,
         "content": briefing_text,
+        "staff_present_count": len(today_staff),
         "tasks_count": len(pending_tasks),
         "low_stock_count": len(low_stocks),
         "sick_animals_count": len(sick_animals),

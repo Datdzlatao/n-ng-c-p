@@ -270,3 +270,45 @@ class KnowledgeSearchResponse(BaseModel):
     results: list[dict] = Field(default_factory=list)
     formatted_context: str
     timestamp: datetime = Field(default_factory=get_current_utc)
+
+
+# ==========================================
+# 12. STAFF & FACE ATTENDANCE SCHEMAS
+# ==========================================
+class StaffBase(BaseModel):
+    id: str = Field(..., description="Mã nhân viên (ví dụ: 'NV01', 'TECH-02')")
+    name: str = Field(..., description="Họ và tên nhân sự")
+    role: Optional[str] = Field(default="Kỹ thuật viên", description="Chức vụ/vai trò")
+    pen_id: Optional[str] = Field(default="123", description="Chuồng/khu vực phụ trách chính")
+    phone: Optional[str] = Field(default=None, description="Số điện thoại liên hệ")
+
+
+class StaffCreate(StaffBase):
+    pass
+
+
+class StaffInDB(StaffBase):
+    avatar_url: Optional[str] = None
+    created_at: Optional[datetime] = None
+    model_config = ConfigDict(from_attributes=True)
+
+
+class StaffCheckInRequest(BaseModel):
+    staff_id: Optional[str] = Field(default=None, description="Mã nhân viên nếu biết trước")
+    image_base64: Optional[str] = Field(default=None, description="Ảnh khuôn mặt Base64 để nhận diện")
+    pen_id: Optional[str] = Field(default="123", description="Mã chuồng nơi điểm danh")
+    note: Optional[str] = Field(default="", description="Ghi chú thêm khi điểm danh")
+
+
+class StaffAttendanceInDB(BaseModel):
+    id: Optional[int] = None
+    staff_id: str
+    staff_name: str
+    pen_id: Optional[str] = None
+    status: str = "present"
+    confidence: Optional[float] = 1.0
+    is_real: Optional[bool] = True
+    note: Optional[str] = ""
+    created_at: Optional[datetime] = None
+    model_config = ConfigDict(from_attributes=True)
+
