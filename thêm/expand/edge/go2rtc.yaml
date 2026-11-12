@@ -1,0 +1,26 @@
+# go2rtc.yaml — Tự động sinh bởi EduSAMS WebRTC Engine
+log:
+  level: info
+
+api:
+  listen: "127.0.0.1:1984"
+
+rtsp:
+  listen: "127.0.0.1:8554"
+
+webrtc:
+  listen: ":8555"
+  candidates:
+    - stun:stun.l.google.com:19302
+
+ffmpeg:
+  bin: "/home/minhphuc/Diem-danh-STEM/edge/tools/bin/ffmpeg"
+  h264: "-c:v h264_nvenc -preset p1 -tune ull -zerolatency 1 -b:v 2500k -maxrate 3000k -bufsize 6000k -g 30 -pix_fmt yuv420p"
+
+streams:
+  cam_1173_ai:
+    - ffmpeg:http://127.0.0.1:8081/stream#video=h264
+  cam_1173_raw:
+    - "rtsp://admin:VangMinhPhuc_01@172.20.10.6:554/live"
+  cam_1174_ai:
+    - ffmpeg:http://127.0.0.1:8082/stream#video=h264

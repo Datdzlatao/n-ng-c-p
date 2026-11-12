@@ -1,0 +1,141 @@
+# ==========================================
+# Diem-danh-STEM .gitignore
+# ==========================================
+
+# --- 1. Python & Virtual Environments ---
+venv/
+.venv/
+env/
+ENV/
+backend/venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+.pytest_cache/
+.cache/
+
+# Testing & Coverage
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# --- 2. Node & Web Frontend ---
+node_modules/
+frontend-web/node_modules/
+dist/
+frontend-web/dist/
+frontend-web/.vite/
+.vite/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# --- 3. Flutter / Dart Mobile ---
+mobile/app/.dart_tool/
+mobile/app/build/
+smart_attendance/.dart_tool/
+smart_attendance/build/
+.dart_tool/
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# --- 4. IDE, OS & Process Files ---
+.vscode/
+.idea/
+.run/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+*.pid
+
+# --- 5. Environment Variables & Secrets ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# --- 6. Logs & Temp Files ---
+*.log
+logs/
+tmp/
+temp/
+*.tmp
+
+# --- 7. Executables & Binary Tools (Chặn các file > 100MB của GitHub) ---
+bin/
+tools/bin/
+edge/tools/bin/
+edge/tools/bin/*
+ffmpeg
+ffprobe
+go2rtc
+*.exe
+*.dll
+*.so
+*.dylib
+
+# --- 8. Databases (SQLite / Local DBs) ---
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.db-journal
+*.sqlite-journal
+*.db-wal
+*.db-shm
+stem_attendance.db
+backend/*.db
+backend/data/*.db
+edge/data/*.db
+
+# --- 9. Backups & Compressed Archives ---
+backups/
+*.bak
+*.bak*
+*.backup
+*.backup/
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+*.rar
+*.7z
+frontend-web_backup_*
+frontend-web/app.backup/
+
+# --- 10. Dynamic Uploads, Violations, Face Captures & Data ---
+backend/uploads/proofs/*
+!backend/uploads/proofs/.gitkeep
+backend/uploads/faces/*
+!backend/uploads/faces/.gitkeep
+backend/uploads/reports/*
+!backend/uploads/reports/.gitkeep
+backend/uploads/test_proofs/*
+edge/data/violations/*
+!edge/data/violations/.gitkeep
+edge/data/logs/*
+!edge/data/logs/.gitkeep
+edge/data/faces/*
+!edge/data/faces/.gitkeep
+edge/data/faces_backup/
+edge/data/offline_proofs/
+edge/data/*.npz
+
+# --- 11. Generated Exports (QR cards, badges, printable sheets) ---
+exports/cards_png/
+exports/qr_cards/
+exports/qr_info/
+exports/qr_tokens/
+exports/*.png
+exports/*.pdf
+
+# --- 12. External Tooling ---
+claude/

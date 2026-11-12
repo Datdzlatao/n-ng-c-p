@@ -1,0 +1,1120 @@
+import asyncio
+import json
+import logging
+from contextlib import asynccontextmanager
+from datetime import date
+from typing import Any, Optional
+
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Query, File, UploadFile, Form
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, JSONResponse
+
+from app.config import get_settings
+from app.db.supabase_client import test_supabase_connection
+from app.db.repositories.env_logs import EnvLogsRepository
+from app.db.repositories.inventory import InventoryRepository
+from app.db.repositories.schedules import SchedulesRepository
+from app.db.repositories.alerts import AlertsRepository
+from app.db.repositories.pens import PensRepository
+from app.db.repositories.devices import DevicesRepository
+from app.db.repositories.animals import AnimalsRepository
+from app.db.repositories.crops import CropsRepository
+from app.db.repositories.feed_logs import FeedLogsRepository
+from app.db.repositories.chat_history import ChatHistoryRepository
+from app.models.schemas import (
+    AgentChatRequest,
+    AgentChatResponse,
+    EnvLogCreate,
+    DeviceControlRequest,
+    AnimalHealthUpdate,
+    AnimalTransferRequest,
+    FeedLogCreate,
+    PenCreate,
+    DiagnosisResponse,
+    KnowledgeSearchRequest,
+    KnowledgeSearchResponse,
+)
+from app.services.agent_service import agent_service
+from app.api.websocket_manager import ws_manager
+from app.background.watcher import start_env_watcher, stop_env_watcher
+from app.background.scheduler import start_scheduler, stop_scheduler, trigger_daily_briefing
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logger = logging.getLogger("smart_manager.main")
+
+settings = get_settings()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Application Lifespan:
+    - Starts Watcher background task (monitoring env logs & smell across pens)
+    - Starts APScheduler (morning farm briefing 07:00)
+    - Gracefully stops background processes on shutdown
+    """
+    logger.info("Initializing Smart Farm Multi-Pen System...")
+
+    start_env_watcher(interval_seconds=15)
+    start_scheduler()
+
+    yield
+
+    logger.info("Shutting down background services...")
+    stop_env_watcher()
+    stop_scheduler()
+
+
+app = FastAPI(
+    title="Smart Farm Multi-Pen Management AI Agent",
+    description="Hệ Thống Quản Lý Đa Chuồng Trại Nông Nghiệp Thông Minh Tích Hợp AI Agent Qua MCP (Model Context Protocol)",
+    version="2.1.0",
+    lifespan=lifespan,
+)
+
+# CORS Middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Repositories
+env_repo = EnvLogsRepository()
+inventory_repo = InventoryRepository()
+schedules_repo = SchedulesRepository()
+alerts_repo = AlertsRepository()
+pens_repo = PensRepository()
+devices_repo = DevicesRepository()
+animals_repo = AnimalsRepository()
+crops_repo = CropsRepository()
+feed_repo = FeedLogsRepository()
+chat_history_repo = ChatHistoryRepository()
+
+
+# ====================================================================
+# REST API ENDPOINTS
+# ====================================================================
+
+@app.get("/health", tags=["System"])
+async def health_check():
+    """System Health Check endpoint."""
+    db_status = test_supabase_connection()
+    return {
+        "status": "online",
+        "app_name": settings.APP_NAME,
+        "environment": settings.APP_ENV,
+        "database": db_status,
+        "ai_model": {
+            "configured": settings.is_gemini_configured,
+            "model": settings.GEMINI_MODEL,
+        },
+        "active_websocket_clients": ws_manager.total_connections,
+    }
+
+
+@app.get("/api/farm/overview", tags=["Farm"])
+async def farm_overview():
+    """Get high-level farm overview (pens, devices, animals, crops)."""
+    try:
+        pens = pens_repo.list_all()
+        devs = devices_repo.list_all()
+        animals = animals_repo.list_all()
+        crops = crops_repo.list_all()
+        sick = animals_repo.get_sick_or_attention_animals()
+        return {
+            "pens_count": len(pens),
+            "devices_count": len(devs),
+            "devices_active": len([d for d in devs if d.get("is_active")]),
+            "animals_count": len(animals),
+            "sick_animals_count": len(sick),
+            "crops_count": len(crops),
+            "pens": pens,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/pens", tags=["Pens"])
+async def get_pens(user_id: Optional[str] = Query(None, description="Lọc danh sách chuồng theo ID người dùng")):
+    """List all pens/zones, optionally isolated by user_id."""
+    return pens_repo.list_all(user_id=user_id)
+
+
+@app.post("/api/pens", tags=["Pens"])
+async def create_pen(payload: PenCreate):
+    """Create a new pen/zone assigned to a user."""
+    try:
+        created = pens_repo.create_pen(
+            pen_id=payload.id,
+            name=payload.name or f"Chuồng {payload.id}",
+            pen_type=payload.type or "livestock",
+            user_id=payload.user_id,
+        )
+        await ws_manager.broadcast("pen_update", {"action": "create", "pen": created})
+        return {"status": "success", "pen": created}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/pens/{pen_id}/details", tags=["Pens"])
+async def get_pen_details(pen_id: str):
+    """
+    Get all information for a specific pen:
+    - Pen metadata
+    - Current animals inside
+    - Devices configured
+    - Latest sensor telemetry
+    """
+    pen = pens_repo.get_by_id(pen_id)
+    if not pen:
+        raise HTTPException(status_code=404, detail=f"Không tìm thấy chuồng {pen_id}")
+
+    animals = animals_repo.list_by_pen(pen_id)
+    devices = devices_repo.list_by_pen(pen_id)
+    telemetry = env_repo.get_latest_logs(limit=1, pen_id=pen_id)
+
+    return {
+        "pen": pen,
+        "animals": animals,
+        "animals_count": len(animals),
+        "devices": devices,
+        "devices_count": len(devices),
+        "latest_telemetry": telemetry[0] if telemetry else None,
+    }
+
+
+@app.get("/api/devices", tags=["IoT Devices"])
+async def get_devices(pen_id: Optional[str] = None):
+    """List IoT devices, optionally filtered by pen_id."""
+    if pen_id:
+        return devices_repo.list_by_pen(pen_id)
+    return devices_repo.list_all()
+
+
+@app.post("/api/devices/control", tags=["IoT Devices"])
+async def control_device_api(payload: DeviceControlRequest):
+    """Turn a device on/off or toggle."""
+    try:
+        is_active = True if payload.action in ["turn_on", "toggle"] else False
+        updated = devices_repo.set_device_state(
+            device_id=payload.device_id,
+            pen_id=payload.pen_id,
+            device_name=payload.device_name,
+            is_active=is_active,
+        )
+        await ws_manager.broadcast("device_update", updated)
+        return {"status": "success", "device": updated}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/animals", tags=["Animals"])
+async def get_animals(pen_id: Optional[str] = None):
+    """List animals in farm, optionally filtered by pen_id."""
+    if pen_id:
+        return animals_repo.list_by_pen(pen_id)
+    return animals_repo.list_all()
+
+
+@app.post("/api/animals/health", tags=["Animals"])
+async def update_health_api(payload: AnimalHealthUpdate):
+    """Update health status for an animal."""
+    try:
+        result = animals_repo.update_health_status(
+            animal_id=payload.animal_id,
+            status=payload.status,
+            note=payload.note,
+            health_type=payload.type or "Disease",
+        )
+        await ws_manager.broadcast("animal_update", result)
+        return {"status": "success", "data": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/animals/transfer", tags=["Animals"])
+async def transfer_animal_api(payload: AnimalTransferRequest):
+    """
+    Chuyển đổi cá thể vật nuôi từ chuồng này sang chuồng khác.
+    """
+    try:
+        # Auto register target pen if missing
+        pen = pens_repo.get_by_id(payload.target_pen_id)
+        if not pen:
+            pens_repo.create_pen(pen_id=payload.target_pen_id, name=f"Chuồng {payload.target_pen_id}")
+
+        result = animals_repo.transfer_pen(
+            animal_id=payload.animal_id,
+            target_pen_id=payload.target_pen_id,
+            reason=payload.reason or "",
+        )
+        await ws_manager.broadcast("animal_transfer", result)
+        return {"status": "success", "data": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/crops", tags=["Crops"])
+async def get_crops():
+    """List all crops."""
+    return crops_repo.list_all()
+
+
+@app.post("/api/feed/log", tags=["Feed"])
+async def log_feed_api(payload: FeedLogCreate):
+    """Record feeding in pen and deduct from inventory."""
+    try:
+        updated_stock = inventory_repo.adjust_quantity(
+            item_name=payload.food_name,
+            delta_quantity=-abs(payload.amount),
+            pen_id=payload.pen_id,
+            note=f"Xuất cho chuồng {payload.pen_id} ăn",
+        )
+        feed_log = feed_repo.log_feeding(
+            pen_id=payload.pen_id,
+            food_name=payload.food_name,
+            amount=payload.amount,
+        )
+        await ws_manager.broadcast("feed_update", {"feed_log": feed_log, "inventory": updated_stock})
+        return {"status": "success", "feed_log": feed_log, "stock_remaining": updated_stock.get("quantity")}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/env/latest", tags=["Environment"])
+async def get_latest_env(limit: int = Query(default=10, ge=1, le=50), pen_id: Optional[str] = None):
+    """Fetch the latest environmental sensor records."""
+    try:
+        return env_repo.get_latest_logs(limit=limit, pen_id=pen_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/env/log", tags=["Environment"])
+async def record_env_log(payload: EnvLogCreate):
+    """
+    Simulate IoT sensor pushing temperature, humidity, and smell level.
+    Broadcasts to WebSocket and triggers The Watcher.
+    """
+    try:
+        saved = env_repo.insert_log(
+            temperature=payload.temperature,
+            humidity=payload.humidity,
+            smell_level=payload.smell_level,
+            pen_id=payload.pen_id or "123",
+        )
+        await ws_manager.broadcast("env_update", saved)
+        return {"status": "success", "data": saved}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/inventory", tags=["Inventory"])
+async def get_inventory():
+    """List all inventory items."""
+    try:
+        return inventory_repo.list_all()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/inventory/low-stock", tags=["Inventory"])
+async def get_low_stock():
+    """Get inventory items at or below minimum threshold."""
+    try:
+        return inventory_repo.get_low_stock()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/schedules", tags=["Schedules"])
+async def get_schedules():
+    """List pending and upcoming schedules."""
+    try:
+        return schedules_repo.list_all()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/alerts", tags=["Alerts"])
+async def get_alerts(limit: int = Query(default=20, ge=1, le=100)):
+    """Fetch recent system alerts."""
+    try:
+        return alerts_repo.get_recent_alerts(limit=limit)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/chat", response_model=AgentChatResponse, tags=["AI Agent"])
+async def chat_with_agent(payload: AgentChatRequest):
+    """
+    Send instruction or question to the Smart Farm AI Agent (MCP Host).
+    Saves message and agent response to persistent chat history per user and pen.
+    """
+    try:
+        user_id = payload.user_id or "guest"
+        pen_id = payload.pen_id
+
+        # 1. Fetch recent history for conversational context
+        history = chat_history_repo.get_history(user_id=user_id, pen_id=pen_id, limit=10)
+
+        # 2. Save user message to chat history
+        chat_history_repo.save_message(
+            user_id=user_id,
+            sender="user",
+            content=payload.message,
+            pen_id=pen_id,
+        )
+
+        # 3. Call AI Agent with context
+        result = await agent_service.chat(payload.message, history=history)
+
+        # 4. Save agent reply & tool calls
+        chat_history_repo.save_message(
+            user_id=user_id,
+            sender="agent",
+            content=result["reply"],
+            pen_id=pen_id,
+            tool_calls=result.get("tool_calls", []),
+        )
+
+        return AgentChatResponse(
+            reply=result["reply"],
+            tool_calls=result.get("tool_calls", []),
+        )
+    except Exception as e:
+        logger.error(f"Chat API error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/chat/history", tags=["AI Agent"])
+async def get_chat_history_api(
+    user_id: str = Query(..., description="ID người dùng"),
+    pen_id: Optional[str] = Query(None, description="Mã chuồng"),
+    limit: int = Query(50, ge=1, le=200),
+):
+    """Retrieve chat history for a specific user and optional pen."""
+    try:
+        messages = chat_history_repo.get_history(user_id=user_id, pen_id=pen_id, limit=limit)
+        return {"status": "success", "messages": messages}
+    except Exception as e:
+        logger.error(f"Error fetching chat history: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/scheduler/trigger-briefing", tags=["Scheduler"])
+async def trigger_briefing():
+    """Manually trigger the farm morning briefing job."""
+    try:
+        result = await trigger_daily_briefing()
+        return {"status": "success", "briefing": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ====================================================================
+# RAG AGRICULTURAL KNOWLEDGE & DISEASE DIAGNOSIS ENDPOINTS (STEM INTEGRATION)
+# ====================================================================
+
+@app.post("/api/diagnose", response_model=DiagnosisResponse, tags=["RAG & Diagnosis"])
+async def diagnose_disease_api(
+    user_query: Optional[str] = Form(None),
+    image: Optional[UploadFile] = File(None),
+):
+    """
+    RAG Agricultural Disease Diagnosis Endpoint (Migrated & Enhanced from stem/app/api/endpoints.py):
+    - Accepts text symptoms and optional uploaded image (multimodal).
+    - Queries Pinecone Vector Store & Agricultural Knowledge Base for verified veterinary/crop protocols.
+    - Truncates & structures into clean JSON: category, species, disease_name, text, answer.
+    """
+    try:
+        image_bytes = None
+        content_type = "image/jpeg"
+        if image:
+            image_bytes = await image.read()
+            content_type = image.content_type if image.content_type else "image/jpeg"
+
+        result = await agent_service.diagnose_multimodal(
+            user_query=user_query,
+            image_bytes=image_bytes,
+            content_type=content_type,
+        )
+
+        return DiagnosisResponse(
+            category=result.get("category"),
+            species=result.get("species"),
+            disease_name=result.get("disease_name"),
+            text=result.get("text", user_query or "Chẩn đoán bệnh hình ảnh"),
+            answer=result.get("answer", "Chưa có thông tin phác đồ điều trị."),
+            sources=result.get("sources", []),
+        )
+    except Exception as e:
+        logger.error(f"Diagnosis API error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/knowledge/search", response_model=KnowledgeSearchResponse, tags=["RAG & Diagnosis"])
+async def search_knowledge_api(
+    query: str = Query(..., description="Từ khóa hoặc triệu chứng tra cứu"),
+    limit: int = Query(default=3, ge=1, le=10),
+):
+    """
+    Search agricultural knowledge base (Pinecone Vector Store + Built-in Fallback).
+    """
+    try:
+        from app.services.rag_service import rag_service
+        context_str, docs = rag_service.retrieve_context(query, k=limit)
+        return KnowledgeSearchResponse(
+            query=query,
+            count=len(docs),
+            results=docs,
+            formatted_context=context_str,
+        )
+    except Exception as e:
+        logger.error(f"Knowledge search API error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ====================================================================
+# WEBSOCKET REAL-TIME ENDPOINT
+# ====================================================================
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    """
+    Real-time WebSocket endpoint:
+    - Live chat with AI Agent
+    - Live IoT alerts & device updates
+    - Animal transfer notifications across pens
+    - Real-time sensor metrics
+    """
+    await ws_manager.connect(websocket)
+
+    await ws_manager.send_personal_message(
+        {
+            "event": "connected",
+            "message": "Kết nối WebSocket thành công tới Smart Farm Đa Chuồng Trại!",
+            "server_time": date.today().isoformat(),
+        },
+        websocket,
+    )
+
+    try:
+        while True:
+            raw_data = await websocket.receive_text()
+            try:
+                payload = json.loads(raw_data)
+                event_type = payload.get("action") or payload.get("event")
+
+                if event_type == "chat":
+                    user_msg = payload.get("message", "")
+                    ws_user = payload.get("user_id") or "guest"
+                    ws_pen = payload.get("pen_id")
+                    if user_msg:
+                        # 1. Fetch recent history
+                        history = chat_history_repo.get_history(user_id=ws_user, pen_id=ws_pen, limit=10)
+
+                        # 2. Save user message
+                        chat_history_repo.save_message(
+                            user_id=ws_user,
+                            sender="user",
+                            content=user_msg,
+                            pen_id=ws_pen,
+                        )
+
+                        # 3. Call AI agent
+                        result = await agent_service.chat(user_msg, history=history)
+
+                        # 4. Save agent message
+                        chat_history_repo.save_message(
+                            user_id=ws_user,
+                            sender="agent",
+                            content=result["reply"],
+                            pen_id=ws_pen,
+                            tool_calls=result.get("tool_calls", []),
+                        )
+
+                        await ws_manager.send_personal_message(
+                            {
+                                "event": "chat_response",
+                                "user_message": user_msg,
+                                "reply": result["reply"],
+                                "tool_calls": result.get("tool_calls", []),
+                            },
+                            websocket,
+                        )
+
+                elif event_type == "ping":
+                    await ws_manager.send_personal_message({"event": "pong"}, websocket)
+
+                else:
+                    await ws_manager.send_personal_message(
+                        {"event": "echo", "data": payload},
+                        websocket,
+                    )
+
+            except json.JSONDecodeError:
+                await ws_manager.send_personal_message(
+                    {"event": "error", "message": "Payload JSON không hợp lệ"},
+                    websocket,
+                )
+
+    except WebSocketDisconnect:
+        ws_manager.disconnect(websocket)
+    except Exception as e:
+        logger.error(f"WebSocket error: {e}")
+        ws_manager.disconnect(websocket)
+
+
+# ====================================================================
+# WEB DASHBOARD (INTERACTIVE MULTI-PEN UI)
+# ====================================================================
+
+@app.get("/", response_class=HTMLResponse, tags=["Dashboard"])
+async def dashboard():
+    """Interactive Web UI for Smart Farm Multi-Pen Management & AI Agent Control."""
+    html_content = """<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Smart Farm Multi-Pen Dashboard (MCP + Gemini)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .chat-bubble { max-width: 85%; }
+    @keyframes pulse-fast { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+    .pulse-alert { animation: pulse-fast 1s infinite; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
+  <div class="max-w-7xl mx-auto p-4 md:p-6 space-y-6">
+    
+    <!-- Header with Pen Switcher -->
+    <header class="flex flex-col md:flex-row items-start md:items-center justify-between border-b border-slate-800 pb-4 gap-4">
+      <div>
+        <div class="flex items-center gap-2">
+          <span class="text-3xl">🌾</span>
+          <h1 class="text-2xl md:text-3xl font-bold bg-gradient-to-r from-emerald-400 via-teal-300 to-cyan-400 bg-clip-text text-transparent">
+            Smart Farm Đa Chuồng Trại
+          </h1>
+        </div>
+        <p class="text-xs md:text-sm text-slate-400 mt-1">
+          Hệ Thống Quản Lý & Chuyển Chuồng Linh Hoạt • FastMCP Agent • Supabase • Google Gemini
+        </p>
+      </div>
+
+      <!-- Controls: Active Pen Selector & WS Status -->
+      <div class="flex flex-wrap items-center gap-3">
+        <div class="flex items-center gap-2 bg-slate-900 border border-slate-700 px-3 py-1.5 rounded-xl shadow">
+          <span class="text-xs font-semibold text-emerald-400">🏠 Đang chọn chuồng:</span>
+          <select id="penSelect" onchange="onPenChanged()" class="bg-slate-950 text-slate-100 text-xs font-medium border border-slate-700 rounded-lg px-2 py-1 focus:outline-none focus:border-emerald-500">
+            <option value="123">Chuồng Heo Thịt Khu A1 (123)</option>
+            <option value="PEN-A02">Chuồng Heo Thịt Khu A2 (PEN-A02)</option>
+            <option value="PEN-ISO-01">Khu Cách Ly Y Tế (PEN-ISO-01)</option>
+            <option value="PEN-B01">Khu Nhà Màng Dưa Lưới B1 (PEN-B01)</option>
+          </select>
+        </div>
+
+        <span id="wsStatus" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-red-950 text-red-400 border border-red-800">
+          <span class="w-2 h-2 rounded-full bg-red-400"></span> WebSocket Offline
+        </span>
+        <button onclick="triggerBriefing()" class="px-3 py-1.5 text-xs bg-indigo-600 hover:bg-indigo-500 rounded-lg font-medium transition shadow flex items-center gap-1">
+          <span>🌅</span> Briefing
+        </button>
+      </div>
+    </header>
+
+    <!-- Metrics Bar for the Selected Pen -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-3.5 shadow">
+        <div class="text-xs text-slate-400">Chuồng Đang Chọn</div>
+        <div id="metricPenName" class="text-base md:text-lg font-bold text-emerald-400 mt-1">Chuồng Heo A1</div>
+        <div id="metricPenType" class="text-[11px] text-slate-500">livestock</div>
+      </div>
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-3.5 shadow">
+        <div class="text-xs text-slate-400">Cảm Biến Môi Trường</div>
+        <div id="metricTelemetry" class="text-base md:text-lg font-bold text-amber-400 mt-1">28.5°C • 75%</div>
+        <div id="metricSmell" class="text-[11px] text-slate-400">Mùi: 2.5 ppm (Bình thường)</div>
+      </div>
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-3.5 shadow">
+        <div class="text-xs text-slate-400">Số Lượng Vật Nuôi / Cây</div>
+        <div id="metricAnimalCount" class="text-base md:text-lg font-bold text-cyan-400 mt-1">2 cá thể</div>
+        <div id="metricAnimalList" class="text-[11px] text-slate-400 truncate">HEO-101, HEO-102</div>
+      </div>
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-3.5 shadow">
+        <div class="text-xs text-slate-400">Thiết Bị IoT Tại Chuồng</div>
+        <div id="metricDeviceStatus" class="text-base md:text-lg font-bold text-rose-400 mt-1">3 thiết bị</div>
+        <div id="metricDeviceList" class="text-[11px] text-slate-400 truncate">Quạt hút, phun sương, đèn</div>
+      </div>
+    </div>
+
+    <!-- Main Grid -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      
+      <!-- Col 1 & 2: Chat with AI Agent -->
+      <div class="lg:col-span-2 flex flex-col bg-slate-900 rounded-2xl border border-slate-800 h-[640px] shadow-xl overflow-hidden">
+        <div class="px-5 py-3 border-b border-slate-800 bg-slate-900/90 flex justify-between items-center">
+          <div class="flex items-center gap-2">
+            <span class="text-xl">🤖</span>
+            <div>
+              <h2 class="font-semibold text-sm">Smart Farm AI Agent (MCP Multi-Pen Host)</h2>
+              <p class="text-xs text-slate-400">Chuyển chuồng, điều khiển IoT, cho ăn & quản lý bệnh dịch qua MCP Tools</p>
+            </div>
+          </div>
+          <button onclick="clearChat()" class="text-xs text-slate-400 hover:text-slate-200">Xóa chat</button>
+        </div>
+
+        <!-- Chat messages container -->
+        <div id="chatBox" class="flex-1 p-4 overflow-y-auto space-y-4 text-sm">
+          <div class="flex items-start gap-3">
+            <div class="w-8 h-8 rounded-full bg-emerald-600/30 text-emerald-400 flex items-center justify-center font-bold text-xs shrink-0">AI</div>
+            <div class="bg-slate-800/80 p-3.5 rounded-2xl rounded-tl-none border border-slate-700/60 chat-bubble">
+              Xin chào! Tôi có thể quản lý và điều phối <b>tất cả các chuồng</b> trong trang trại của bạn.<br/>
+              Bạn có thể ra lệnh chuyển đổi chuồng linh hoạt:<br/>
+              • <i>"Chuyển con HEO-102 sang chuồng cách ly PEN-ISO-01"</i><br/>
+              • <i>"Đổi chuồng cho HEO-101 sang chuồng A2"</i><br/>
+              • <i>"Xem tình hình chuồng PEN-A02"</i><br/>
+              • <i>"Bật quạt chuồng A2"</i> hoặc <i>"Cho chuồng PEN-ISO-01 ăn 5 kg cám"</i>
+            </div>
+          </div>
+        </div>
+
+        <!-- Quick Prompts Bar for Multi-Pen & RAG -->
+        <div class="px-4 py-2 border-t border-slate-800 bg-slate-950/60 flex gap-2 overflow-x-auto text-xs">
+          <button onclick="sendQuickPrompt('Chẩn đoán bệnh heo bị sốt cao 41 độ, tai tím tái, khó thở và đề xuất phác đồ điều trị')" class="px-3 py-1 bg-rose-900/40 border border-rose-700/60 hover:bg-rose-800/60 rounded-full shrink-0 text-rose-200 font-medium">🩺 RAG Chẩn Đoán Tai Xanh</button>
+          <button onclick="sendQuickPrompt('Lá lúa xuất hiện đốm hình thoi nâu xám, cháy lá, xin phác đồ điều trị đạo ôn')" class="px-3 py-1 bg-emerald-900/40 border border-emerald-700/60 hover:bg-emerald-800/60 rounded-full shrink-0 text-emerald-200 font-medium">🌾 RAG Bệnh Đạo Ôn</button>
+          <button onclick="sendQuickPrompt('Chuyển cá thể HEO-102 sang chuồng cách ly PEN-ISO-01 để điều trị')" class="px-3 py-1 bg-amber-900/40 border border-amber-700/60 hover:bg-amber-800/60 rounded-full shrink-0 text-amber-200 font-medium">🚚 Chuyển HEO-102 sang Cách Ly</button>
+          <button onclick="sendQuickPrompt('Chuyển cá thể HEO-101 sang chuồng PEN-A02')" class="px-3 py-1 bg-slate-800 hover:bg-slate-700 rounded-full shrink-0 text-slate-300">🚚 Đổi HEO-101 sang Chuồng A2</button>
+          <button onclick="sendQuickPrompt('Xem thông tin chi tiết chuồng PEN-A02')" class="px-3 py-1 bg-slate-800 hover:bg-slate-700 rounded-full shrink-0 text-slate-300">🔍 Tra cứu chuồng A2</button>
+          <button onclick="sendQuickPrompt('Bật quạt thông gió chuồng PEN-A02')" class="px-3 py-1 bg-slate-800 hover:bg-slate-700 rounded-full shrink-0 text-slate-300">🌬️ Bật quạt chuồng A2</button>
+          <button onclick="sendQuickPrompt('Cho chuồng PEN-A02 ăn 10 kg cám')" class="px-3 py-1 bg-slate-800 hover:bg-slate-700 rounded-full shrink-0 text-slate-300">🥣 Cho ăn chuồng A2</button>
+        </div>
+
+        <!-- Input box -->
+        <div class="p-3 bg-slate-900 border-t border-slate-800 flex gap-2">
+          <input id="chatInput" type="text" placeholder="Nhập lệnh: ví dụ 'Chuyển con HEO-102 sang chuồng cách ly PEN-ISO-01'..." onkeydown="if(event.key==='Enter') sendChat()"
+            class="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-500 text-slate-100 placeholder-slate-500">
+          <button onclick="sendChat()" class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 font-medium text-sm rounded-xl transition shadow">Gửi</button>
+        </div>
+      </div>
+
+      <!-- Col 3: Side Panels (Quick Animal Transfer & Pen IoT Simulator) -->
+      <div class="space-y-6">
+        
+        <!-- Form Chuyển Chuồng Trực Quan (Quick Animal Transfer) -->
+        <div class="bg-slate-900 rounded-2xl border border-slate-800 p-4 shadow-xl">
+          <h3 class="font-semibold text-sm flex items-center gap-2 mb-3 text-amber-400">
+            <span>🚚</span> Thao Tác Chuyển Chuồng Nhanh
+          </h3>
+          <div class="space-y-2.5 text-xs">
+            <div>
+              <label class="text-slate-400">Chọn vật nuôi:</label>
+              <select id="transferAnimalId" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-200 mt-1">
+                <option value="HEO-102">HEO-102 (Đang ở chuồng 123 - Sốt nhẹ)</option>
+                <option value="HEO-101">HEO-101 (Đang ở chuồng 123 - Khỏe)</option>
+                <option value="HEO-201">HEO-201 (Đang ở chuồng PEN-A02)</option>
+                <option value="HEO-ISO-01">HEO-ISO-01 (Đang ở chuồng PEN-ISO-01)</option>
+              </select>
+            </div>
+            <div>
+              <label class="text-slate-400">Chuyển sang chuồng:</label>
+              <select id="transferTargetPen" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-200 mt-1">
+                <option value="PEN-ISO-01">PEN-ISO-01 (Khu Cách Ly Y Tế)</option>
+                <option value="PEN-A02">PEN-A02 (Chuồng Heo Thịt Khu A2)</option>
+                <option value="123">123 (Chuồng Heo Thịt Khu A1)</option>
+              </select>
+            </div>
+            <div>
+              <label class="text-slate-400">Lý do chuyển:</label>
+              <input id="transferReason" type="text" placeholder="Cách ly điều trị / Tách đàn..." value="Cách ly điều trị y tế" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-200 mt-1">
+            </div>
+            <button onclick="submitAnimalTransfer()" class="w-full py-2 bg-amber-600 hover:bg-amber-500 font-medium text-white rounded-lg transition shadow">
+              Xác Nhận Đổi Chuồng
+            </button>
+          </div>
+        </div>
+
+        <!-- IoT Sensor Simulator for Selected Pen -->
+        <div class="bg-slate-900 rounded-2xl border border-slate-800 p-4 shadow-xl">
+          <h3 class="font-semibold text-sm flex items-center gap-2 mb-2 text-cyan-400">
+            <span>📡</span> Mô Phỏng Cảm Biến Chuồng Này
+          </h3>
+          <p class="text-[11px] text-slate-400 mb-3">Đẩy thông số nhiệt độ/mùi cho chuồng đang chọn để kích hoạt <b>The Watcher</b>:</p>
+          <div class="grid grid-cols-3 gap-2 mb-3">
+            <div>
+              <label class="text-[10px] text-slate-400">Nhiệt độ (°C)</label>
+              <input id="simTemp" type="number" step="0.1" value="28.5" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-200">
+            </div>
+            <div>
+              <label class="text-[10px] text-slate-400">Độ ẩm (%)</label>
+              <input id="simHum" type="number" step="0.1" value="75.0" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-200">
+            </div>
+            <div>
+              <label class="text-[10px] text-slate-400">Mùi (ppm)</label>
+              <input id="simSmell" type="number" step="0.1" value="2.5" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-200">
+            </div>
+          </div>
+          <div class="flex gap-2">
+            <button onclick="pushSensorData(false, false)" class="flex-1 py-1.5 bg-cyan-800 hover:bg-cyan-700 text-xs rounded-lg font-medium transition">
+              Đo Thường
+            </button>
+            <button onclick="pushSensorData(true, false)" class="flex-1 py-1.5 bg-rose-800 hover:bg-rose-700 text-xs rounded-lg font-medium transition">
+              🔥 Quá Nóng
+            </button>
+            <button onclick="pushSensorData(false, true)" class="flex-1 py-1.5 bg-amber-800 hover:bg-amber-700 text-xs rounded-lg font-medium transition">
+              💨 Mùi Cao
+            </button>
+          </div>
+        </div>
+
+        <!-- RAG Agricultural Knowledge & Disease Diagnosis Card -->
+        <div class="bg-slate-900 rounded-2xl border border-slate-800 p-4 shadow-xl">
+          <h3 class="font-semibold text-sm flex items-center gap-2 mb-2 text-rose-400">
+            <span>🩺</span> Chẩn Đoán Bệnh & RAG Tri Thức
+          </h3>
+          <p class="text-[11px] text-slate-400 mb-2">Tra cứu phác đồ điều trị từ <b>Pinecone Knowledge Base</b>:</p>
+          <div class="space-y-2 text-xs">
+            <textarea id="diagQuery" rows="2" placeholder="Nhập triệu chứng (VD: heo sốt cao tai tím, đốm lá đạo ôn...)"
+              class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-200 placeholder-slate-500 focus:outline-none focus:border-rose-500"></textarea>
+            <div class="flex items-center gap-2">
+              <input id="diagImage" type="file" accept="image/*" class="text-[11px] text-slate-400 file:mr-2 file:py-1 file:px-2.5 file:rounded-md file:border-0 file:text-[11px] file:bg-slate-800 file:text-slate-300 hover:file:bg-slate-700">
+            </div>
+            <button onclick="submitRAGDiagnosis()" class="w-full py-2 bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-500 hover:to-pink-500 font-medium text-white rounded-lg transition shadow">
+              🩺 Chẩn Đoán & Trích Xuất Phác Đồ RAG
+            </button>
+          </div>
+        </div>
+
+        <!-- Real-time Alerts Panel -->
+        <div class="bg-slate-900 rounded-2xl border border-slate-800 p-4 shadow-xl flex flex-col h-[260px]">
+          <div class="flex justify-between items-center mb-2">
+            <h3 class="font-semibold text-xs flex items-center gap-1.5 text-amber-400">
+              <span class="pulse-alert">⚠️</span> Cảnh Báo Trang Trại Realtime
+            </h3>
+            <span id="alertCountBadge" class="text-[10px] bg-amber-950 text-amber-400 border border-amber-800 px-2 py-0.5 rounded-full">0 mới</span>
+          </div>
+          <div id="alertsContainer" class="flex-1 overflow-y-auto space-y-2 text-xs pr-1">
+            <p class="text-slate-500 text-center py-6 text-xs">Chưa có cảnh báo realtime nào.</p>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let ws = null;
+    let alertCount = 0;
+    let currentPenId = "123";
+
+    async function loadPensList() {
+      try {
+        const res = await fetch('/api/pens');
+        const pens = await res.json();
+        const sel = document.getElementById('penSelect');
+        const transferPenSel = document.getElementById('transferTargetPen');
+        
+        sel.innerHTML = '';
+        transferPenSel.innerHTML = '';
+
+        pens.forEach(p => {
+          const opt = document.createElement('option');
+          opt.value = p.id;
+          opt.textContent = `${p.name || 'Chuồng'} (${p.id})`;
+          sel.appendChild(opt);
+
+          const opt2 = document.createElement('option');
+          opt2.value = p.id;
+          opt2.textContent = `${p.name || 'Chuồng'} (${p.id})`;
+          transferPenSel.appendChild(opt2);
+        });
+
+        sel.value = currentPenId;
+        await refreshPenDetails(currentPenId);
+      } catch (e) {
+        console.error("Could not load pens:", e);
+      }
+    }
+
+    async function onPenChanged() {
+      currentPenId = document.getElementById('penSelect').value;
+      await refreshPenDetails(currentPenId);
+    }
+
+    async function refreshPenDetails(penId) {
+      try {
+        const res = await fetch(`/api/pens/${penId}/details`);
+        const data = await res.json();
+
+        // Update Header Metrics
+        document.getElementById('metricPenName').textContent = data.pen.name || `Chuồng ${penId}`;
+        document.getElementById('metricPenType').textContent = `Mã: ${penId} • Loại: ${data.pen.type}`;
+
+        const tel = data.latest_telemetry;
+        if (tel) {
+          document.getElementById('metricTelemetry').textContent = `${tel.temperature}°C • ${tel.humidity}%`;
+          document.getElementById('metricSmell').textContent = `Mùi: ${tel.smell_level || 0} ppm`;
+        } else {
+          document.getElementById('metricTelemetry').textContent = `28.0°C • 70%`;
+          document.getElementById('metricSmell').textContent = `Mùi: 2.0 ppm`;
+        }
+
+        document.getElementById('metricAnimalCount').textContent = `${data.animals_count} cá thể`;
+        document.getElementById('metricAnimalList').textContent = data.animals.length ? 
+          data.animals.map(a => `${a.id} (${a.status})`).join(', ') : 'Chưa có vật nuôi';
+
+        document.getElementById('metricDeviceStatus').textContent = `${data.devices_count} thiết bị`;
+        document.getElementById('metricDeviceList').textContent = data.devices.length ? 
+          data.devices.map(d => `${d.name}: ${d.is_active ? 'Bật 🟢' : 'Tắt 🔴'}`).join(', ') : 'Chưa gắn thiết bị';
+
+        // Refresh Animal dropdown in transfer form
+        const animSel = document.getElementById('transferAnimalId');
+        const allAnimalsRes = await fetch('/api/animals');
+        const allAnimals = await allAnimalsRes.json();
+        animSel.innerHTML = '';
+        allAnimals.forEach(a => {
+          const opt = document.createElement('option');
+          opt.value = a.id;
+          opt.textContent = `${a.id} (Ở chuồng ${a.pen_id} - ${a.status})`;
+          animSel.appendChild(opt);
+        });
+
+      } catch (e) {
+        console.error("Error refreshing pen details:", e);
+      }
+    }
+
+    async function submitAnimalTransfer() {
+      const animalId = document.getElementById('transferAnimalId').value;
+      const targetPen = document.getElementById('transferTargetPen').value;
+      const reason = document.getElementById('transferReason').value;
+
+      try {
+        const res = await fetch('/api/animals/transfer', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ animal_id: animalId, target_pen_id: targetPen, reason: reason })
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+          showAlertPopup({
+            alert_type: "🚚 ĐỔI CHUỒNG THÀNH CÔNG",
+            message: `Cá thể ${animalId} đã được chuyển sang chuồng [${targetPen}]. Lý do: ${reason}`
+          });
+          await refreshPenDetails(currentPenId);
+        }
+      } catch (e) {
+        alert("Lỗi khi chuyển chuồng: " + e);
+      }
+    }
+
+    function connectWS() {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${window.location.host}/ws`;
+      ws = new WebSocket(wsUrl);
+
+      ws.onopen = () => {
+        const badge = document.getElementById('wsStatus');
+        badge.className = "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-emerald-950 text-emerald-400 border border-emerald-800";
+        badge.innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span> Realtime Connected';
+      };
+
+      ws.onmessage = (event) => {
+        const payload = JSON.parse(event.data);
+        handleWsEvent(payload);
+      };
+
+      ws.onclose = () => {
+        const badge = document.getElementById('wsStatus');
+        badge.className = "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-red-950 text-red-400 border border-red-800";
+        badge.innerHTML = '<span class="w-2 h-2 rounded-full bg-red-400"></span> Disconnected (Retrying...)';
+        setTimeout(connectWS, 3000);
+      };
+    }
+
+    function handleWsEvent(msg) {
+      if (msg.event === 'alert') {
+        showAlertPopup(msg.data);
+      } else if (msg.event === 'chat_response') {
+        appendAIMessage(msg.reply, msg.tool_calls);
+      } else if (msg.event === 'morning_briefing') {
+        showBriefingPopup(msg.data);
+      } else if (msg.event === 'animal_transfer') {
+        showAlertPopup({
+          alert_type: "🚚 ĐIỀU CHUYỂN CHUỒNG",
+          message: `Vật nuôi ${msg.data.animal_id} vừa được chuyển từ [${msg.data.old_pen_id}] sang [${msg.data.target_pen_id}]!`
+        });
+        refreshPenDetails(currentPenId);
+      } else if (msg.event === 'device_update') {
+        refreshPenDetails(currentPenId);
+      } else if (msg.event === 'env_update') {
+        refreshPenDetails(currentPenId);
+      }
+    }
+
+    function appendAIMessage(text, toolCalls) {
+      const box = document.getElementById('chatBox');
+      const toolHtml = toolCalls && toolCalls.length ? 
+        `<div class="mt-2 text-xs bg-slate-950 p-2 rounded border border-slate-700 text-emerald-300">
+           <b>🛠️ MCP Tool:</b> ${toolCalls.map(t => `<code>${t.tool || t.name}</code>`).join(', ')}
+         </div>` : '';
+      
+      const div = document.createElement('div');
+      div.className = "flex items-start gap-3";
+      div.innerHTML = `
+        <div class="w-8 h-8 rounded-full bg-emerald-600/30 text-emerald-400 flex items-center justify-center font-bold text-xs shrink-0">AI</div>
+        <div class="bg-slate-800/80 p-3.5 rounded-2xl rounded-tl-none border border-slate-700/60 chat-bubble text-slate-100">
+          <div>${text.replace(/\\n/g, '<br/>')}</div>
+          ${toolHtml}
+        </div>
+      `;
+      box.appendChild(div);
+      box.scrollTop = box.scrollHeight;
+    }
+
+    function appendUserMessage(text) {
+      const box = document.getElementById('chatBox');
+      const div = document.createElement('div');
+      div.className = "flex items-start gap-3 justify-end";
+      div.innerHTML = `
+        <div class="bg-emerald-600 text-white p-3.5 rounded-2xl rounded-tr-none chat-bubble shadow">
+          ${text}
+        </div>
+        <div class="w-8 h-8 rounded-full bg-slate-700 text-slate-300 flex items-center justify-center font-bold text-xs shrink-0">BẠN</div>
+      `;
+      box.appendChild(div);
+      box.scrollTop = box.scrollHeight;
+    }
+
+    function sendChat() {
+      const input = document.getElementById('chatInput');
+      const text = input.value.trim();
+      if (!text) return;
+
+      appendUserMessage(text);
+      input.value = '';
+
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ action: "chat", message: text }));
+      } else {
+        fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: text })
+        })
+        .then(res => res.json())
+        .then(data => appendAIMessage(data.reply, data.tool_calls))
+        .catch(err => appendAIMessage("❌ Lỗi khi gửi lệnh: " + err, []));
+      }
+    }
+
+    function sendQuickPrompt(prompt) {
+      document.getElementById('chatInput').value = prompt;
+      sendChat();
+    }
+
+    function showAlertPopup(data) {
+      alertCount++;
+      document.getElementById('alertCountBadge').textContent = `${alertCount} mới`;
+
+      const container = document.getElementById('alertsContainer');
+      if (alertCount === 1) container.innerHTML = '';
+
+      const card = document.createElement('div');
+      card.className = "p-3 rounded-xl bg-amber-950/40 border border-amber-700/60 space-y-1 shadow animate-fade-in";
+      card.innerHTML = `
+        <div class="flex justify-between items-center font-semibold text-amber-300">
+          <span>🚨 ${data.alert_type || 'CẢNH BÁO'}</span>
+          <span class="text-[10px] text-slate-400">${new Date().toLocaleTimeString()}</span>
+        </div>
+        <p class="text-slate-200 text-xs">${data.message || ''}</p>
+      `;
+      container.prepend(card);
+    }
+
+    function showBriefingPopup(data) {
+      showAlertPopup({
+        alert_type: "🌅 BRIEFING BUỔI SÁNG",
+        message: data.content
+      });
+    }
+
+    function pushSensorData(isTempSpike, isSmellSpike) {
+      let temp = parseFloat(document.getElementById('simTemp').value) || 28.5;
+      let hum = parseFloat(document.getElementById('simHum').value) || 75.0;
+      let smell = parseFloat(document.getElementById('simSmell').value) || 2.5;
+
+      if (isTempSpike) {
+        temp = 38.5;
+        hum = 35.0;
+      }
+      if (isSmellSpike) {
+        smell = 16.5;
+      }
+
+      fetch('/api/env/log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ temperature: temp, humidity: hum, smell_level: smell, pen_id: currentPenId })
+      })
+      .then(res => res.json())
+      .then(res => {
+        showAlertPopup({
+          alert_type: "IOT_TELEMETRY",
+          message: `📡 Chuồng [${currentPenId}]: ${temp}°C, Độ ẩm: ${hum}%, Mùi: ${smell} ppm.`
+        });
+      });
+    }
+
+    function triggerBriefing() {
+      fetch('/api/scheduler/trigger-briefing', { method: 'POST' });
+    }
+
+    async function submitRAGDiagnosis() {
+      const query = document.getElementById('diagQuery').value.trim();
+      const imageInput = document.getElementById('diagImage');
+      const file = imageInput.files ? imageInput.files[0] : null;
+
+      if (!query && !file) {
+        alert("Vui lòng nhập triệu chứng hoặc chọn ảnh để chẩn đoán!");
+        return;
+      }
+
+      appendUserMessage(`🩺 [Chẩn đoán RAG]: ${query || 'Phân tích hình ảnh'}`);
+
+      const formData = new FormData();
+      if (query) formData.append('user_query', query);
+      if (file) formData.append('image', file);
+
+      try {
+        const res = await fetch('/api/diagnose', {
+          method: 'POST',
+          body: formData,
+        });
+        const data = await res.json();
+        const replyHtml = `<b>🩺 Chẩn đoán:</b> ${data.disease_name || 'Chưa rõ'} (${data.category || ''} - ${data.species || ''})<br/><br/><b>📋 Phác đồ điều trị (RAG Knowledge):</b><br/>${(data.answer || '').replace(/\n/g, '<br/>')}`;
+        appendAIMessage(replyHtml, [{ tool: "diagnose_agricultural_disease (RAG Pinecone)" }]);
+        document.getElementById('diagQuery').value = '';
+        if (imageInput) imageInput.value = '';
+      } catch (e) {
+        appendAIMessage("❌ Lỗi khi gửi chẩn đoán: " + e, []);
+      }
+    }
+
+    function clearChat() {
+      document.getElementById('chatBox').innerHTML = '';
+    }
+
+    loadPensList();
+    connectWS();
+  </script>
+</body>
+</html>
+"""
+    return HTMLResponse(content=html_content)

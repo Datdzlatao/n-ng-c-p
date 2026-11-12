@@ -1,0 +1,18 @@
+  <div class="view" id="view-my-leaves">
+    <div class="section-hdr">
+      <div>
+        <div class="section-title">📝 Đơn Xin Nghỉ Phép</div>
+        <p style="color:var(--muted);font-size:0.85rem;margin:4px 0 0 0;">Gửi đơn xin phép trực tuyến đến Giáo Viên Chủ Nhiệm</p>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button class="btn btn-primary" onclick="openCreateLeaveModal()">+ Tạo Đơn Xin Phép</button>
+        <button class="btn btn-outline" onclick="loadMyLeaves()">🔄 Làm Mới</button>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Học Sinh</th><th>Từ Ngày</th><th>Đến Ngày</th><th>Lý Do</th><th>Trạng Thái</th><th>Ngày Gửi</th></tr></thead>
+        <tbody id="myLeavesBody"><tr><td colspan="6" style="text-align:center;padding:32px;color:var(--muted);">Đang tải...</td></tr></tbody>
+      </table>
+    </div>
+  </div>

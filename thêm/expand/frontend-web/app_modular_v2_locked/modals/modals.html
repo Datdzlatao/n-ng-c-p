@@ -1,0 +1,1017 @@
+<!-- MODALS -->
+
+<!-- MODAL: SỬA THÔNG TIN THÀNH VIÊN (HIỆU TRƯỞNG QUẢN LÝ CẤP DƯỚI) -->
+<div class="modal-overlay" id="modalEditMember">
+  <div class="modal" style="max-width:520px;">
+    <button class="modal-close" onclick="closeModal('modalEditMember')">✕</button>
+    <h3 style="color:var(--purple);">✏️ Chỉnh Sửa Thông Tin Thành Viên</h3>
+    <p class="modal-sub" id="editMemberSub">Hiệu trưởng chủ động cập nhật số điện thoại, email, vai trò cấp dưới</p>
+    <div id="editMemberAlert" style="display:none;margin-bottom:12px;padding:8px 12px;border-radius:8px;font-size:12px;"></div>
+    <form id="formEditMember" onsubmit="saveEditMember(event)" style="display:flex;flex-direction:column;gap:12px;">
+      <input type="hidden" id="editMemberId">
+      <div class="form-group">
+        <label>Họ và Tên đầy đủ *</label>
+        <input type="text" id="editMemberFullName" required placeholder="Ví dụ: Nguyễn Văn An">
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <div class="form-group">
+          <label>📞 Số điện thoại liên hệ</label>
+          <input type="tel" id="editMemberPhone" placeholder="0912345678" style="font-family:monospace;">
+        </div>
+        <div class="form-group">
+          <label>✉️ Email liên hệ</label>
+          <input type="email" id="editMemberEmail" placeholder="user@school.edu.vn">
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <div class="form-group">
+          <label>Ngày sinh</label>
+          <input type="date" id="editMemberDob">
+        </div>
+        <div class="form-group">
+          <label>Giới tính</label>
+          <select id="editMemberGender">
+            <option value="Nam">Nam</option>
+            <option value="Nữ">Nữ</option>
+            <option value="Khác">Khác</option>
+          </select>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <div class="form-group">
+          <label>Vai trò cấp dưới</label>
+          <select id="editMemberRole">
+            <option value="TEACHER">Giáo Viên (TEACHER)</option>
+            <option value="INSPECTOR">Giám Thị / Sao Đỏ (INSPECTOR)</option>
+            <option value="PARENT">Phụ Huynh (PARENT)</option>
+            <option value="STUDENT">Học Sinh (STUDENT)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Trạng thái tài khoản</label>
+          <select id="editMemberStatus">
+            <option value="ACTIVE">Hoạt động bình thường</option>
+            <option value="SUSPENDED">Tạm khóa tài khoản</option>
+            <option value="PENDING_APPROVAL">Chờ duyệt</option>
+          </select>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px;">
+        <button type="button" class="btn btn-outline" onclick="closeModal('modalEditMember')">Hủy</button>
+        <button type="submit" class="btn btn-primary" id="btnSaveEditMember" style="background:var(--purple);">Lưu Thay Đổi</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- MODAL: HIỆU TRƯỞNG ĐẶT LẠI MẬT KHẨU CẤP DƯỚI -->
+<div class="modal-overlay" id="modalResetMemberPassword">
+  <div class="modal" style="max-width:440px;">
+    <button class="modal-close" onclick="closeModal('modalResetMemberPassword')">✕</button>
+    <h3 style="color:var(--orange);">🔑 Đặt Lại Mật Khẩu Thành Viên</h3>
+    <p class="modal-sub" id="resetMemberSub">Hiệu trưởng cấp mật khẩu mới cho tài khoản cấp dưới</p>
+    <div id="resetMemberAlert" style="display:none;margin-bottom:12px;padding:8px 12px;border-radius:8px;font-size:12px;"></div>
+    <form id="formResetMemberPassword" onsubmit="submitResetMemberPassword(event)" style="display:flex;flex-direction:column;gap:12px;">
+      <input type="hidden" id="resetMemberId">
+      <div class="form-group">
+        <label>Mật Khẩu Mới (Tối thiểu 6 ký tự) *</label>
+        <div style="display:flex;gap:6px;">
+          <input type="text" id="resetMemberNewPass" required placeholder="Nhập mật khẩu mới..." style="flex:1;font-family:monospace;">
+          <button type="button" class="btn btn-outline" onclick="document.getElementById('resetMemberNewPass').value='123456'">123456</button>
+        </div>
+      </div>
+      <p style="font-size:0.75rem;color:var(--muted);margin:0;">Các phiên đăng nhập trước đó của tài khoản sẽ tự động thu hồi.</p>
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px;">
+        <button type="button" class="btn btn-outline" onclick="closeModal('modalResetMemberPassword')">Hủy</button>
+        <button type="submit" class="btn btn-primary" id="btnSubmitResetMember" style="background:var(--orange);">Cập Nhật Mật Khẩu</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- 0. MODAL: ĐỔI MẬT KHẨU -->
+<div class="modal-overlay" id="modalChangePassword">
+  <div class="modal" style="max-width:440px;">
+    <button class="modal-close" onclick="closeModal('modalChangePassword')">✕</button>
+    <h3 style="color:var(--blue);">🔐 Đổi Mật Khẩu</h3>
+    <p class="modal-sub">Cập nhật mật khẩu mới cho tài khoản đang đăng nhập</p>
+    <div id="changePassAlert" style="display:none;margin-bottom:12px;padding:8px 12px;border-radius:8px;font-size:12px;"></div>
+    <div class="form-group" style="margin-bottom:12px;">
+      <label>Mật Khẩu Hiện Tại *</label>
+      <input type="password" id="cpOldPass" placeholder="Nhập mật khẩu đang dùng...">
+    </div>
+    <div class="form-group" style="margin-bottom:12px;">
+      <label>Mật Khẩu Mới (Tối thiểu 6 ký tự) *</label>
+      <input type="password" id="cpNewPass" placeholder="Nhập mật khẩu mới...">
+    </div>
+    <div class="form-group" style="margin-bottom:16px;">
+      <label>Xác Nhận Mật Khẩu Mới *</label>
+      <input type="password" id="cpConfirmPass" placeholder="Nhập lại mật khẩu mới...">
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;">
+      <button class="btn btn-outline" onclick="closeModal('modalChangePassword')">Hủy</button>
+      <button class="btn btn-primary" id="btnSubmitChangePass" onclick="submitChangePassword()">Lưu Mật Khẩu</button>
+    </div>
+  </div>
+</div>
+
+<!-- 1. MODAL: NGÔI TRƯỜNG CỦA TÔI (ADMIN & HEADMASTER ONLY) -->
+<div class="modal-overlay" id="modalMySchool">
+  <div class="modal" style="max-width:580px;">
+    <button class="modal-close" onclick="closeModal('modalMySchool')">✕</button>
+    <h3 style="color:var(--purple);">🏫 Ngôi Trường Của Tôi</h3>
+    <p class="modal-sub">Khởi tạo server trường mới hoặc chuyển đổi quyền quản trị trường học</p>
+    <div class="form-row">
+      <div class="form-group"><label>Tên Trường *</label><input id="mySchoolName" placeholder="THPT Chuyên Lê Hồng Phong"></div>
+      <div class="form-group"><label>Mã Trường (Slug) *</label><input id="mySchoolCode" placeholder="thpt-le-hong-phong"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Tỉnh / Thành Phố</label><input id="mySchoolProvince" placeholder="TP. Hồ Chí Minh"></div>
+      <div class="form-group"><label>Năm Học</label>
+        <select id="mySchoolYear"><option>2025-2026</option><option>2026-2027</option></select>
+      </div>
+    </div>
+    <div class="form-group"><label>Địa Chỉ Trường</label><input id="mySchoolAddress" placeholder="235 Nguyễn Văn Cừ, Quận 5"></div>
+    <hr style="border-color:var(--border);margin:16px 0;">
+    <div style="font-weight:700;color:var(--blue);font-size:0.85rem;margin-bottom:10px;">👤 Tài Khoản Hiệu Trưởng Quản Trị Trường</div>
+    <div class="form-row">
+      <div class="form-group"><label>Họ Tên Hiệu Trưởng *</label><input id="mySchoolHmName" placeholder="Thầy Nguyễn Văn A"></div>
+      <div class="form-group"><label>SĐT Hiệu Trưởng</label><input id="mySchoolHmPhone" placeholder="0901xxxxxx" type="tel"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Tên Đăng Nhập *</label><input id="mySchoolHmUser" placeholder="hieutruong_lhp"></div>
+      <div class="form-group"><label>Mật Khẩu *</label><input id="mySchoolHmPass" type="password" placeholder="••••••••"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('modalMySchool')">Đóng</button>
+      <button class="btn btn-primary" style="background:var(--purple);" onclick="doCreateMySchool()">🚀 Khởi Tạo Ngôi Trường Của Tôi</button>
+    </div>
+  </div>
+</div>
+
+<!-- 2. MODAL: APPLE FACEID GUIDED SCANNER (AUTOCAPTURE) -->
+<div class="modal-overlay" id="modalFaceIDScanner">
+  <div class="modal" style="max-width:540px;text-align:center;">
+    <button class="modal-close" onclick="closeFaceIDScanner()">✕</button>
+    <div style="display:flex;align-items:center;justify-content:center;gap:8px;font-weight:800;font-size:1.15rem;color:var(--purple);">
+      <span>✨ Apple FaceID Setup & AutoCapture</span>
+    </div>
+    <p class="modal-sub" style="margin-bottom:12px;">Hệ thống tự động chụp đa góc và lưu ảnh nhận diện theo Mã Học Sinh riêng biệt</p>
+
+    <!-- Student Info Inputs (If creating new) -->
+    <div id="faceidStudentInputs" style="margin-bottom:14px;background:var(--overlay);padding:12px;border-radius:10px;text-align:left;">
+      <div class="form-row">
+        <div class="form-group"><label>Họ Tên Học Sinh *</label><input id="fidStuName" placeholder="Nguyễn Văn A" oninput="updateFaceIdCardPreview()"></div>
+        <div class="form-group"><label>Lớp Học</label><select id="fidStuClass" onchange="updateFaceIdCardPreview()"></select></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Mã HS (Tự động cấp)</label><input id="fidStuCode" readonly style="background:var(--card);color:var(--blue);font-weight:700;"></div>
+        <div class="form-group"><label>SĐT Phụ Huynh</label><input id="fidStuPhone" placeholder="0901xxxxxx" type="tel"></div>
+      </div>
+    </div>
+
+    <!-- Live Scanner Oval HUD -->
+    <div class="faceid-container">
+      <div class="faceid-oval-wrap" id="faceidOvalBox">
+        <video id="faceidVideo" class="faceid-video" autoplay playsinline muted></video>
+        <canvas id="faceidCanvas" class="faceid-canvas-hidden"></canvas>
+        <div class="faceid-hud-ring"></div>
+      </div>
+
+      <div class="faceid-step-badge" id="faceidStepBadge">
+        🎯 Bước 1/4: Nhìn thẳng vào Camera
+      </div>
+
+      <div class="faceid-progress-bar">
+        <div class="faceid-progress-val" id="faceidProgressVal"></div>
+      </div>
+
+      <!-- Preview frames strip -->
+      <div style="display:flex;gap:8px;margin-top:12px;justify-content:center;">
+        <img id="fidPreview1" style="width:48px;height:48px;border-radius:6px;border:1px dashed var(--border);object-fit:cover;" title="Chính diện">
+        <img id="fidPreview2" style="width:48px;height:48px;border-radius:6px;border:1px dashed var(--border);object-fit:cover;" title="Nghiêng trái">
+        <img id="fidPreview3" style="width:48px;height:48px;border-radius:6px;border:1px dashed var(--border);object-fit:cover;" title="Nghiêng phải">
+        <img id="fidPreview4" style="width:48px;height:48px;border-radius:6px;border:1px dashed var(--border);object-fit:cover;" title="Ngước lên">
+      </div>
+    </div>
+
+    <div class="modal-footer" style="justify-content:center;gap:12px;margin-top:16px;">
+      <button class="btn btn-outline" onclick="closeFaceIDScanner()">Hủy Bỏ</button>
+      <button class="btn btn-primary" id="btnSnapFace" style="background:var(--purple);font-size:0.92rem;padding:8px 24px;" onclick="snapCurrentPose()">
+        📸 Chụp Góc Này (Space)
+      </button>
+      <button class="btn btn-success" id="btnFinishFace" style="display:none;" onclick="finishFaceEnrollment()">
+        🎉 Hoàn Tất & Cấp Thẻ QR
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- 3. MODAL: THẺ HỌC SINH THÔNG MINH (SMART STUDENT CARD & QR) -->
+<div class="modal-overlay" id="modalStudentCard">
+  <div class="modal" style="max-width:440px;text-align:center;">
+    <button class="modal-close" onclick="closeModal('modalStudentCard')">✕</button>
+    <h3 style="color:var(--blue);margin-bottom:4px;">🪪 Thẻ Học Sinh Thông Minh</h3>
+    <p class="modal-sub" style="margin-bottom:16px;">Mã QR & Bộ nhận diện FaceID đã liên kết</p>
+
+    <!-- Student Card Box -->
+    <div class="stu-idcard" id="studentCardContent">
+      <div class="stu-idcard-hdr">
+        <div style="text-align:left;">
+          <div style="font-size:0.75rem;color:var(--muted);text-transform:uppercase;letter-spacing:1px;" id="scSchoolTitle">HỆ THỐNG EDUSAMS</div>
+          <div style="font-weight:800;font-size:0.95rem;color:#fff;">THẺ HỌC SINH 2025-2026</div>
+        </div>
+        <div style="font-size:1.4rem;">🎓</div>
+      </div>
+      <div class="stu-idcard-body">
+        <img id="scPhoto" class="stu-idcard-photo" src="/assets/icons/default_avatar.png" alt="FaceID">
+        <div class="stu-idcard-info" style="text-align:left;">
+          <div style="color:var(--muted);font-size:0.72rem;">MÃ HỌC SINH</div>
+          <div class="stu-idcard-code" id="scCode">HS01-0001</div>
+          <div style="font-weight:700;font-size:0.95rem;margin-top:4px;" id="scName">Nguyễn Văn A</div>
+          <div style="color:var(--muted);font-size:0.75rem;margin-top:2px;">Lớp: <b style="color:var(--text);" id="scClass">10A1</b></div>
+          <div style="color:var(--muted);font-size:0.75rem;">Điểm rèn luyện: <b style="color:var(--green);" id="scPoints">100đ</b></div>
+          <div style="margin-top:6px;padding:4px 8px;background:rgba(168,85,247,0.1);border-radius:6px;font-size:0.72rem;display:flex;align-items:center;justify-content:space-between;gap:4px;">
+            <span>🎟️ Mã Mời PH: <b id="scParentInviteCode" style="color:var(--purple);font-family:monospace;font-weight:800;">PH------</b></span>
+            <button class="btn btn-outline btn-xs" style="padding:1px 5px;font-size:0.65rem;" onclick="copyTextById('scParentInviteCode')">📋 Copy</button>
+          </div>
+        </div>
+        <div class="stu-idcard-qr" id="scQrCanvasWrap">
+          <div id="scQrCode"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-footer" style="justify-content:center;gap:10px;margin-top:18px;">
+      <button class="btn btn-outline" onclick="closeModal('modalStudentCard')">Đóng</button>
+      <button class="btn btn-primary" onclick="printStudentCard()">🖨️ In Thẻ Học Sinh</button>
+    </div>
+  </div>
+</div>
+
+<!-- 4. MODAL: ADD CAMERA (WEBCAM / RTSP / AUTO-NAMING) -->
+<div class="modal-overlay" id="modalAddCamera">
+  <div class="modal" style="max-width:520px;">
+    <button class="modal-close" onclick="closeModal('modalAddCamera')">✕</button>
+    <h3>+ Thêm Trạm Camera AI</h3>
+    <p class="modal-sub">Hỗ trợ Webcam máy tính (Laptop/PC), Luồng RTSP Camera IP và Raspberry Pi</p>
+    
+    <div class="form-group">
+      <label>Loại Camera / Nguồn Phát Video *</label>
+      <select id="camStreamType" onchange="onCamTypeChange(this.value)" style="width:100%;padding:9px 12px;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--text);outline:none;">
+        <option value="WEBCAM">💻 Webcam Laptop / Camera USB (Chạy trực tiếp trên máy này)</option>
+        <option value="RTSP">📹 Camera IP RTSP (Dahua, Hikvision, Ezviz, Imou, Yoosee...)</option>
+        <option value="HTTP_CAM">📱 Camera Điện Thoại / HTTP (DroidCam, IP Webcam)</option>
+      </select>
+    </div>
+
+    <div class="form-group" id="camUrlGroup">
+      <label id="camUrlLabel">Chỉ số Camera (Index) *</label>
+      <input id="acStreamUrl" value="0" placeholder="0 (Webcam mặc định) hoặc 1">
+      <small style="color:var(--muted);font-size:0.75rem;" id="camUrlHint">0 = Webcam tích hợp sẵn trên Laptop / PC</small>
+    </div>
+
+    <!-- Tailscale Funnel HTTPS Auto-Publish Info -->
+    <div id="acTailscaleNotice" style="display:none;background:rgba(168,85,247,0.1);border:1px solid rgba(168,85,247,0.25);border-radius:8px;padding:10px;margin-bottom:12px;font-size:0.75rem;color:var(--purple);line-height:1.4;">
+      🌐 <b>Tự Động Xuất Bản HTTPS (Tailscale Funnel):</b><br>
+      Sau khi tạo trạm RTSP, hệ thống sẽ tự động cấu hình và xuất bản luồng camera thành link HTTPS/WSS bảo mật qua Tailscale Funnel. Bạn có thể xem trực tiếp mượt mà trên điện thoại ở bất cứ đâu ngoài mạng trường học!
+    </div>
+
+    <div class="form-row">
+      <div class="form-group"><label>Tên Trạm (Tự động điền)</label><input id="acName" placeholder="Camera 1"></div>
+      <div class="form-group"><label>Vị Trí Lắp Đặt</label><input id="acLocation" placeholder="Cổng Chính"></div>
+    </div>
+
+    <div class="form-group">
+      <label>Chiều Giám Sát Ra / Vào *</label>
+      <select id="acDirection" style="width:100%;padding:9px 12px;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--text);outline:none;font-weight:600;">
+        <option value="IN">🟢 Cổng Vào (Check-In học sinh đến trường)</option>
+        <option value="OUT">🔵 Cổng Ra (Check-Out học sinh tan trường)</option>
+        <option value="BIDIRECTIONAL">🔄 Hai Chiều (Hỗ trợ cả Vào và Ra)</option>
+      </select>
+    </div>
+
+    <!-- Toggle Nhận diện trang phục -->
+    <div style="background:var(--overlay);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-top:10px;display:flex;align-items:center;justify-content:space-between;">
+      <div>
+        <div style="font-weight:700;font-size:0.86rem;display:flex;align-items:center;gap:6px;">
+          <span>👗 Nhận Diện & Bắt Lỗi Trang Phục Tự Động</span>
+        </div>
+        <div style="font-size:0.74rem;color:var(--muted);margin-top:2px;">
+          Tự động nhận diện áo trắng, áo đoàn, trang phục dân tộc và cảnh báo nề nếp
+        </div>
+      </div>
+      <label class="toggle" style="margin-left:12px;flex-shrink:0;">
+        <input type="checkbox" id="acUniformCheck" checked>
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
+
+    <div id="acResult" style="display:none;background:var(--overlay);border-radius:8px;padding:14px;margin-top:12px;font-size:0.82rem;"></div>
+    
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('modalAddCamera')">Hủy</button>
+      <button class="btn btn-primary" onclick="doAddCamera()">🚀 Tạo Trạm Camera →</button>
+    </div>
+  </div>
+</div>
+
+<!-- 4.1. MODAL: EDIT CAMERA (RTSP / NAME / LOCATION) -->
+<div class="modal-overlay" id="modalEditCamera">
+  <div class="modal" style="max-width:520px;">
+    <button class="modal-close" onclick="closeModal('modalEditCamera')">✕</button>
+    <h3 style="color:var(--blue);">✏️ Cập Nhật Cấu Hình Camera / Luồng RTSP</h3>
+    <p class="modal-sub">Trạm Camera AI (Raspberry Pi/Laptop) sẽ tự động nạp luồng mới ngay khi bạn lưu</p>
+    <input type="hidden" id="editCamId">
+
+    <div class="form-group">
+      <label>Loại Camera / Nguồn Phát Video *</label>
+      <select id="editCamStreamType" onchange="onEditCamTypeChange(this.value)" style="width:100%;padding:9px 12px;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--text);outline:none;">
+        <option value="WEBCAM">💻 Webcam Laptop / Camera USB (Chỉ số 0, 1)</option>
+        <option value="RTSP">📹 Camera IP RTSP (Dahua, Hikvision, Ezviz, Imou, Yoosee...)</option>
+        <option value="HTTP_CAM">📱 Camera Điện Thoại / HTTP (DroidCam, IP Webcam)</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+        <label id="editCamUrlLabel" style="margin:0;">Đường Dẫn Luồng RTSP / Chỉ Số *</label>
+        <div id="rtspQuickTools" style="display:flex;gap:6px;">
+          <button type="button" class="btn btn-xs btn-outline" style="padding:2px 8px;font-size:0.7rem;color:var(--blue);border-color:var(--blue);" onclick="testEditCamConnection()" title="Kiểm tra thông mạng & cổng 554">⚡ Kiểm Tra</button>
+          <button type="button" class="btn btn-xs btn-outline" style="padding:2px 8px;font-size:0.7rem;color:var(--purple);border-color:var(--purple);" onclick="discoverLanCamsForEdit()" title="Tự động quét mạng LAN tìm Camera IP">🔍 Quét IP Mạng</button>
+          <button type="button" class="btn btn-xs btn-outline" style="padding:2px 8px;font-size:0.7rem;color:var(--green);border-color:var(--green);" onclick="autoFixEditCamIp()" title="Tự động cập nhật IP mới khi đổi mạng">🔄 Tự Sửa IP</button>
+        </div>
+      </div>
+      <input id="editCamStreamUrl" placeholder="rtsp://user:pass@ip:554/live">
+      <small style="color:var(--muted);font-size:0.75rem;" id="editCamUrlHint">Nhập URL RTSP của Camera IP trường học</small>
+
+      <!-- Diagnostic Result Box -->
+      <div id="editCamDiagBox" style="display:none;margin-top:8px;padding:8px 10px;border-radius:8px;font-size:0.75rem;line-height:1.4;"></div>
+
+      <!-- Discovered Cameras Box -->
+      <div id="editCamDiscoveredBox" style="display:none;margin-top:8px;padding:8px 10px;background:var(--overlay);border:1px solid var(--border);border-radius:8px;font-size:0.75rem;"></div>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group"><label>Tên Trạm</label><input id="editCamName"></div>
+      <div class="form-group"><label>Vị Trí Lắp Đặt</label><input id="editCamLocation"></div>
+    </div>
+
+    <!-- Toggle Nhận diện trang phục trong Edit Modal -->
+    <div style="background:var(--overlay);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-top:12px;display:flex;align-items:center;justify-content:space-between;">
+      <div>
+        <div style="font-weight:700;font-size:0.86rem;display:flex;align-items:center;gap:6px;">
+          <span>👗 Nhận Diện & Bắt Lỗi Trang Phục Tự Động</span>
+        </div>
+        <div style="font-size:0.74rem;color:var(--muted);margin-top:2px;">
+          Bật/Tắt module AI & Color phân tích áo trắng, áo đoàn, đồ dân tộc cho trạm này
+        </div>
+      </div>
+      <label class="toggle" style="margin-left:12px;flex-shrink:0;">
+        <input type="checkbox" id="editCamUniformCheck" checked>
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
+
+    <div style="background:rgba(59,130,246,0.1);border:1px solid rgba(59,130,246,0.2);border-radius:8px;padding:10px;margin-top:10px;font-size:0.75rem;color:var(--blue);">
+      🌐 <b>Cơ Chế Tự Động Đồng Bộ (Zero-Touch):</b><br>
+      Khi bạn bấm "Lưu Cập Nhật", trạm AI camera sẽ tự động nhận link RTSP mới từ máy chủ và đổi luồng tức thì mà không cần vào máy sửa config thủ công.
+    </div>
+
+    <!-- Tailscale HTTPS Card in Edit Camera Modal -->
+    <div id="editCamTailscaleCard" style="background:var(--overlay);border:1px solid rgba(168,85,247,0.3);border-radius:10px;padding:12px 14px;margin-top:10px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+        <div style="font-weight:700;font-size:0.86rem;display:flex;align-items:center;gap:6px;color:var(--purple);">
+          <span>🌐 Luồng HTTPS Công Khai (Tailscale Funnel)</span>
+        </div>
+        <span id="editCamTsStatusBadge" class="chip chip-muted" style="font-size:0.68rem;padding:2px 8px;">Đang kiểm tra...</span>
+      </div>
+      <div style="font-size:0.75rem;color:var(--muted);margin-bottom:8px;line-height:1.4;">
+        Tự động public luồng camera thành link HTTPS có chứng chỉ SSL Let's Encrypt, xem trực tiếp trên điện thoại & Web ngoài mạng LAN.
+      </div>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <input id="editCamPublicUrl" readonly style="font-size:0.75rem;font-family:monospace;padding:7px 10px;background:var(--card);color:var(--text);flex:1;border:1px solid var(--border);border-radius:6px;" placeholder="Chưa xuất bản link HTTPS...">
+        <button type="button" class="btn btn-xs btn-outline" style="padding:6px 10px;border-color:var(--purple);color:var(--purple);white-space:nowrap;" onclick="copyInputText('editCamPublicUrl')" title="Sao chép link HTTPS">📋 Copy</button>
+        <button type="button" class="btn btn-xs btn-primary" id="btnPublishTs" style="padding:6px 10px;white-space:nowrap;" onclick="publishEditCamTailscale()" title="Kích hoạt / Tạo lại link HTTPS Tailscale">🚀 Xuất Bản</button>
+      </div>
+      <div id="editCamTsNotice" style="display:none;margin-top:8px;font-size:0.74rem;padding:6px 8px;border-radius:6px;background:rgba(234,179,8,0.1);color:#eab308;border:1px solid rgba(234,179,8,0.25);"></div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('modalEditCamera')">Hủy</button>
+      <button class="btn btn-primary" id="btnSaveEditCam" onclick="doSaveEditCamera()">💾 Lưu Cập Nhật →</button>
+    </div>
+  </div>
+</div>
+
+<!-- 4.2. MODAL: LIVE STREAM PREVIEW -->
+<div class="modal-overlay" id="modalLiveStream">
+  <div class="modal" style="max-width:760px;">
+    <button class="modal-close" onclick="closeLiveStreamModal()">✕</button>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;padding-right:28px;">
+      <h3 id="liveModalTitle" style="color:var(--green);margin:0;font-size:1.05rem;">👁️ Xem Luồng Trực Tiếp</h3>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <button class="btn btn-xs btn-outline" onclick="toggleLiveStreamFit()" id="btnLiveFit" title="Đổi chế độ tỉ lệ khung hình (Vừa khung / Lấp đầy)">📐 Vừa Khung</button>
+        <span class="chip chip-green" style="font-weight:800;">LIVE</span>
+      </div>
+    </div>
+    <p class="modal-sub" id="liveModalSub" style="margin-bottom:10px;">Luồng video trực tiếp từ trạm camera AI (Kèm nhận diện khuôn mặt thời gian thực)</p>
+
+    <div id="liveModalContainer" style="background:#000;border-radius:12px;overflow:hidden;min-height:260px;max-height:65vh;display:flex;align-items:center;justify-content:center;position:relative;border:1px solid var(--border);">
+      <!-- Real-time FPS Badge in Modal -->
+      <div id="liveModalFpsBadge" style="position:absolute;top:10px;right:10px;background:rgba(0,0,0,0.75);backdrop-filter:blur(6px);color:#10b981;font-family:monospace;font-size:0.72rem;padding:3px 8px;border-radius:6px;border:1px solid rgba(16,185,129,0.3);z-index:4;display:none;">
+        ⚡ -- FPS
+      </div>
+      <img id="liveStreamImg" src="" style="width:100%;height:auto;max-height:65vh;object-fit:contain;display:none;" alt="Live Stream" onload="document.getElementById('liveStreamImg').style.display='block';document.getElementById('liveStreamLoading').style.display='none';" onerror="onLiveStreamError()">
+      <div id="liveStreamLoading" style="text-align:center;padding:30px;color:var(--muted);">
+        <div style="font-size:2rem;margin-bottom:10px;">📹</div>
+        <div style="font-weight:600;color:var(--text);margin-bottom:6px;">Đang kết nối luồng Live Stream camera...</div>
+        <div style="font-size:0.78rem;max-width:450px;margin:0 auto;line-height:1.5;">
+          Nếu trạm AI (<code>edge/main.py</code>) đang chạy, hình ảnh trực tiếp sẽ tự động hiện lên trong giây lát.
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top:10px;display:flex;align-items:center;justify-content:space-between;font-size:0.78rem;color:var(--muted);flex-wrap:wrap;gap:8px;">
+      <div style="display:flex;flex-direction:column;gap:3px;max-width:340px;">
+        <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">RTSP nguồn: <code id="liveSourceUrl" style="color:var(--blue);">—</code></div>
+        <div id="liveTsUrlContainer" style="display:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+          🌐 HTTPS Tailscale: <a id="liveTsLink" href="#" target="_blank" style="color:var(--purple);font-family:monospace;font-size:0.72rem;text-decoration:underline;">—</a>
+        </div>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <button id="btnCopyTsLive" class="btn btn-outline btn-xs" style="border-color:var(--purple);color:var(--purple);display:none;" onclick="copyLiveTsUrl()">📋 Copy Link HTTPS</button>
+        <button onclick="toggleModalFullscreen()" class="btn btn-outline btn-xs" style="border-color:var(--purple);color:var(--purple);">⛶ Toàn Màn Hình</button>
+        <a id="liveDirectLink" href="#" target="_blank" class="btn btn-outline btn-xs" style="border-color:var(--blue);color:var(--blue);">Cửa Sổ Mới ↗</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 5. MODAL: EDGE CONFIG PREVIEW (RASPBERRY PI & LAPTOP) -->
+<div class="modal-overlay" id="modalEdgeConfig">
+  <div class="modal" style="max-width:620px;">
+    <button class="modal-close" onclick="closeModal('modalEdgeConfig')">✕</button>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <span style="font-size:1.3rem;">🍓</span>
+      <h3 style="color:var(--blue);">Cấu Hình Trạm Camera AI (Raspberry Pi & Máy Tính)</h3>
+    </div>
+    <p class="modal-sub">Giữ nguyên bí mật <b>Secret Key</b> để xác thực trạm với máy chủ trường học</p>
+
+    <!-- SECRET KEY BOX -->
+    <div style="background:var(--overlay);border:1px solid rgba(245,158,11,0.3);border-radius:8px;padding:12px;margin:12px 0;">
+      <div style="font-size:0.78rem;font-weight:700;color:var(--orange);margin-bottom:4px;">🔑 Secret Key Của Trạm (Raspberry Pi / Laptop):</div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <code id="edgeSecretKey" style="flex:1;background:var(--bg);padding:8px 12px;border-radius:6px;word-break:break-all;font-size:0.85rem;color:var(--green);font-weight:700;"></code>
+        <button class="btn btn-outline btn-sm" onclick="copyTextById('edgeSecretKey')">📋 Copy Key</button>
+      </div>
+    </div>
+
+    <!-- TABS: RASPBERRY PI vs PYTHON SCRIPT -->
+    <div style="display:flex;gap:8px;margin-bottom:10px;">
+      <button id="btnTabPi" class="btn btn-primary btn-sm" onclick="switchConfigTab('PI')">🍓 Raspberry Pi (/etc/stem_camera.conf)</button>
+      <button id="btnTabPy" class="btn btn-outline btn-sm" onclick="switchConfigTab('PY')">💻 Python Script (edge/config.py)</button>
+    </div>
+
+    <!-- TAB 1: RASPBERRY PI INI -->
+    <div id="cfgPanePi">
+      <div style="font-size:0.75rem;color:var(--muted);margin-bottom:4px;">Dán vào file <code>/etc/stem_camera.conf</code> hoặc <code>config.ini</code> trên Raspberry Pi:</div>
+      <pre id="edgePiConfText" style="background:var(--bg);padding:12px;border-radius:8px;color:var(--purple);font-size:0.8rem;overflow-x:auto;max-height:220px;"></pre>
+      <button class="btn btn-primary btn-sm" style="margin-top:8px;background:var(--purple);" onclick="copyTextById('edgePiConfText')">📋 Sao Chép Cấu Hình Raspberry Pi</button>
+    </div>
+
+    <!-- TAB 2: PYTHON EDGE -->
+    <div id="cfgPanePy" style="display:none;">
+      <div style="font-size:0.75rem;color:var(--muted);margin-bottom:4px;">Dán vào file <code>edge/config.py</code> trên Laptop/PC hoặc Pi:</div>
+      <pre id="edgePyConfText" style="background:var(--bg);padding:12px;border-radius:8px;color:var(--green);font-size:0.8rem;overflow-x:auto;max-height:220px;"></pre>
+      <button class="btn btn-primary btn-sm" style="margin-top:8px;" onclick="copyTextById('edgePyConfText')">📋 Sao Chép Cấu Hình Python</button>
+    </div>
+
+    <!-- 1-CLICK APPLY LOCAL CAMERA -->
+    <div style="background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.3);border-radius:8px;padding:12px;margin:12px 0;display:flex;align-items:center;justify-content:space-between;gap:12px;">
+      <div>
+        <div style="font-size:0.82rem;font-weight:700;color:var(--green);">⚡ Áp Dụng Cục Bộ Trực Tiếp:</div>
+        <div style="font-size:0.75rem;color:var(--muted);">Ghi đè cấu hình vào <code>edge/data/camera.conf</code> để trạm AI tự động kết nối ngay.</div>
+      </div>
+      <button class="btn btn-primary btn-sm" style="background:var(--green);border-color:var(--green);white-space:nowrap;" onclick="applyConfigToLocalCamera()">🎯 Áp Dụng Ngay</button>
+    </div>
+
+    <div class="modal-footer" style="margin-top:16px;">
+      <button class="btn btn-outline" onclick="closeModal('modalEdgeConfig')">Đóng</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Link Child (Phụ Huynh Tự Liên Kết Con Em) -->
+<div class="modal-overlay" id="modalLinkChild">
+  <div class="modal" style="max-width:500px;">
+    <button class="modal-close" onclick="closeModal('modalLinkChild')">✕</button>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+      <div style="width:42px;height:42px;border-radius:12px;background:rgba(168,85,247,0.15);display:flex;align-items:center;justify-content:center;font-size:1.4rem;">🔗</div>
+      <div>
+        <h3 style="margin:0;font-size:1.15rem;">Liên Kết Con Em Vào Tài Khoản</h3>
+        <p class="modal-sub" style="margin:2px 0 0 0;">Kết nối nhanh để nhận thông báo vào trường và theo dõi điểm danh</p>
+      </div>
+    </div>
+
+    <!-- Segmented Tab Switching -->
+    <div style="display:flex;background:var(--overlay);padding:4px;border-radius:10px;margin-bottom:18px;gap:4px;">
+      <button id="tabBtnInvite" type="button" class="btn btn-sm" onclick="switchLinkChildTab('INVITE')" style="flex:1;border:none;background:var(--card);color:var(--text);font-weight:700;box-shadow:0 1px 4px rgba(0,0,0,0.2);padding:8px 6px;">
+        🎟️ Mã Mời 1 Chạm (Khuyên dùng)
+      </button>
+      <button id="tabBtnManual" type="button" class="btn btn-sm" onclick="switchLinkChildTab('MANUAL')" style="flex:1;border:none;background:transparent;color:var(--muted);font-weight:600;padding:8px 6px;">
+        📝 Nhập Thủ Công (Mã HS)
+      </button>
+    </div>
+
+    <!-- TAB 1: MÃ MỜI 1 CHẠM (ƯU TIÊN HÀNG ĐẦU) -->
+    <div id="linkTabInvite">
+      <div style="background:linear-gradient(135deg, rgba(168,85,247,0.1), rgba(59,130,246,0.06));border:1px solid rgba(168,85,247,0.3);border-radius:10px;padding:12px;font-size:0.82rem;color:var(--text);margin-bottom:16px;line-height:1.45;">
+        ⚡ <strong>Cách nhanh nhất:</strong> Hỏi con <strong>"Mã mời phụ huynh"</strong> hiển thị ngay trong mục <em>Tài Khoản</em> của con (hoặc trên Thẻ Học Sinh) dạng <code>PH-XXXXXX</code>. Nhập vào là kết nối tức thì, không cần nhập lại ngày sinh/SĐT!
+      </div>
+
+      <div class="form-group">
+        <label style="font-weight:700;color:var(--purple);">Mã Mời Phụ Huynh Của Con *</label>
+        <input id="lcInviteCode" placeholder="Ví dụ: PH-A8C2E9" style="text-transform:uppercase;font-weight:800;letter-spacing:2px;font-family:monospace;font-size:1.15rem;color:var(--purple);border:1.5px solid rgba(168,85,247,0.4);text-align:center;">
+        <div style="font-size:0.75rem;color:var(--muted);margin-top:4px;text-align:center;">Mã gồm tiền tố <code>PH-</code> kèm 6 ký tự viết hoa do ứng dụng của con cung cấp.</div>
+      </div>
+    </div>
+
+    <!-- TAB 2: NHẬP THỦ CÔNG ĐỐI SOÁT (FALLBACK) -->
+    <div id="linkTabManual" style="display:none;">
+      <div style="background:rgba(59,130,246,0.06);border:1px solid rgba(59,130,246,0.2);border-radius:10px;padding:12px;font-size:0.8rem;color:var(--muted);margin-bottom:16px;line-height:1.4;">
+        🛡️ <strong>Dành cho trường hợp con chưa đăng nhập ứng dụng:</strong> Nhập <strong>Mã Học Sinh</strong> kèm theo <strong>Ngày sinh của con</strong> hoặc <strong>Số điện thoại</strong> đã đăng ký với nhà trường để hệ thống tự động đối soát chính chủ.
+      </div>
+
+      <div class="form-group">
+        <label>Mã Học Sinh * <span style="font-size:0.75rem;color:var(--muted);">(Ví dụ: HS10-0001)</span></label>
+        <input id="lcStudentCode" placeholder="Nhập mã học sinh của con..." style="text-transform:uppercase;font-weight:700;letter-spacing:1px;">
+      </div>
+
+      <div class="form-group">
+        <label>Thông Tin Đối Soát (Ngày sinh con hoặc SĐT Phụ Huynh) *</label>
+        <input id="lcVerifyKey" placeholder="Ví dụ: 15/05/2010 hoặc 0912345678">
+        <div style="font-size:0.75rem;color:var(--muted);margin-top:4px;">Nếu SĐT tài khoản của bạn đã trùng với SĐT lưu hồ sơ trường, có thể để trống.</div>
+      </div>
+    </div>
+
+    <!-- CHUNG CHO CẢ 2 TAB: QUAN HỆ -->
+    <div class="form-group" style="margin-top:10px;">
+      <label>Quan Hệ Với Học Sinh *</label>
+      <select id="lcRelation">
+        <option value="Bố">👨 Bố / Cha</option>
+        <option value="Mẹ">👩 Mẹ</option>
+        <option value="Phụ huynh" selected>👨‍👩‍👧 Phụ Huynh</option>
+        <option value="Người giám hộ">🛡️ Người Giám Hộ</option>
+      </select>
+    </div>
+
+    <div class="modal-footer" style="margin-top:20px;display:flex;justify-content:flex-end;gap:10px;">
+      <button class="btn btn-outline" onclick="closeModal('modalLinkChild')">Hủy</button>
+      <button id="btnSubmitLinkChild" class="btn btn-primary" onclick="submitLinkChild()" style="display:inline-flex;align-items:center;gap:6px;background:var(--purple);font-weight:700;">
+        <span id="btnSubmitLinkChildText">🚀 Kết Nối 1 Chạm Ngay</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Assign Parent To Student (BGH / GVCN) -->
+<div class="modal-overlay" id="modalAssignParent">
+  <div class="modal" style="max-width:480px;">
+    <button class="modal-close" onclick="closeModal('modalAssignParent')">✕</button>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+      <div style="width:40px;height:40px;border-radius:10px;background:rgba(34,197,94,0.15);display:flex;align-items:center;justify-content:center;font-size:1.3rem;">👨‍👩‍👧</div>
+      <div>
+        <h3 style="margin:0;font-size:1.15rem;">Gán Tài Khoản Phụ Huynh</h3>
+        <p class="modal-sub" style="margin:2px 0 0 0;" id="apStudentSub">Gán quyền theo dõi cho tài khoản phụ huynh</p>
+      </div>
+    </div>
+    <input type="hidden" id="apStudentId">
+
+    <div class="form-group">
+      <label>Số Điện Thoại, Username hoặc Email Phụ Huynh *</label>
+      <input id="apParentIdent" placeholder="Nhập SĐT, Username hoặc Email phụ huynh...">
+      <div style="font-size:0.75rem;color:var(--muted);margin-top:4px;">Phụ huynh cần có tài khoản với vai trò Phụ Huynh (PARENT) trên hệ thống.</div>
+    </div>
+
+    <div class="form-group">
+      <label>Quan Hệ</label>
+      <select id="apRelation">
+        <option value="Phụ huynh" selected>👨‍👩‍👧 Phụ Huynh</option>
+        <option value="Bố">👨 Bố / Cha</option>
+        <option value="Mẹ">👩 Mẹ</option>
+        <option value="Người giám hộ">🛡️ Người Giám Hộ</option>
+      </select>
+    </div>
+
+    <div id="apExistingLinksWrap" style="display:none;margin-top:14px;padding:12px;background:var(--overlay);border-radius:8px;">
+      <div style="font-weight:700;font-size:0.82rem;margin-bottom:6px;">Tài khoản phụ huynh hiện tại:</div>
+      <div id="apExistingLinksList"></div>
+    </div>
+
+    <div class="modal-footer" style="margin-top:20px;display:flex;justify-content:flex-end;gap:10px;">
+      <button class="btn btn-outline" onclick="closeModal('modalAssignParent')">Đóng</button>
+      <button class="btn btn-success" onclick="submitAssignParent()" style="font-weight:700;">
+        ✓ Gán Liên Kết
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Add Student Manual Modal -->
+<div class="modal-overlay" id="modalAddStudent">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('modalAddStudent')">✕</button>
+    <h3>+ Thêm Học Sinh Thủ Công</h3><p class="modal-sub">Nhập thông tin học sinh vào lớp (Mã HS sẽ được tự động sinh nếu để trống)</p>
+    <div class="form-row">
+      <div class="form-group"><label>Họ Tên *</label><input id="asStuName" placeholder="Nguyễn Văn A"></div>
+      <div class="form-group"><label>Mã Học Sinh (Tùy chọn)</label><input id="asStuCode" placeholder="Để trống để tự động cấp"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Ngày Sinh</label><input id="asStuDob" type="date"></div>
+      <div class="form-group"><label>Lớp</label><select id="asStuClass"></select></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>SĐT Phụ Huynh</label><input id="asStuPhone" placeholder="0901xxxxxx" type="tel"></div>
+      <div class="form-group"><label>Tên Phụ Huynh</label><input id="asStuParent" placeholder="Nguyễn Văn B"></div>
+    </div>
+    <div class="modal-footer" style="gap:10px;flex-wrap:wrap;">
+      <button class="btn btn-outline" onclick="closeModal('modalAddStudent')">Hủy</button>
+      <button class="btn btn-outline" onclick="doAddStudent(false)">Thêm (Không Quét)</button>
+      <button class="btn btn-primary" style="background:var(--purple);" onclick="doAddStudent(true)">📸 Thêm & Quét FaceID Ngay →</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Direct Face Scan For Verification -->
+<div class="modal-overlay" id="modalDirectFaceScan">
+  <div class="modal" style="max-width:500px;">
+    <button class="modal-close" onclick="closeModal('modalDirectFaceScan')">✕</button>
+    <h3 style="color:var(--purple);">📸 Quét Khuôn Mặt Xác Minh Học Sinh</h3>
+    <p class="modal-sub">Chọn học sinh cần đối soát hoặc nhập mã để mở luồng quét FaceID cấp Tích Xanh</p>
+    <div class="form-group" style="margin-top:12px;">
+      <label>Chọn Học Sinh Cần Xác Minh *</label>
+      <select id="dfsStudentSelect" style="width:100%;padding:9px 12px;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:0.88rem;"></select>
+    </div>
+    <div style="background:var(--overlay);border-radius:8px;padding:12px;margin:14px 0;font-size:0.8rem;color:var(--muted);line-height:1.4;">
+      💡 Sau khi bấm bắt đầu, hệ thống sẽ mở camera với vòng tròn HUD 3D chuẩn Apple FaceID. Dữ liệu quét xong sẽ lập tức lưu ảnh và đồng bộ sang máy camera AI điểm danh của trường.
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('modalDirectFaceScan')">Hủy</button>
+      <button class="btn btn-primary" style="background:var(--purple);font-weight:700;" onclick="triggerDirectFaceScan()">🚀 Khởi Động Quét FaceID →</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Face Samples Viewer -->
+<div class="modal-overlay" id="modalFaceSamplesViewer">
+  <div class="modal" style="max-width:680px;">
+    <button class="modal-close" onclick="closeModal('modalFaceSamplesViewer')">✕</button>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+      <span style="font-size:1.4rem;">🛡️</span>
+      <h3 id="fsvTitle" style="color:var(--blue);">Hồ Sơ Mẫu Mặt Sinh Trắc Học FaceID</h3>
+    </div>
+    <p class="modal-sub" id="fsvSub">Toàn bộ các góc quét sinh trắc học đã thu thập và lưu trữ</p>
+    <div id="fsvGrid" style="display:grid;grid-template-columns:repeat(auto-fill, minmax(130px, 1fr));gap:12px;margin:18px 0;max-height:420px;overflow-y:auto;padding:4px;">
+      <div style="text-align:center;color:var(--muted);padding:24px;grid-column:1/-1;">Đang tải mẫu ảnh...</div>
+    </div>
+    <div class="modal-footer" style="justify-content:space-between;">
+      <span id="fsvCount" style="font-size:0.8rem;color:var(--muted);"></span>
+      <button class="btn btn-outline" onclick="closeModal('modalFaceSamplesViewer')">Đóng</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add Class Modal -->
+<div class="modal-overlay" id="modalAddClass">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('modalAddClass')">✕</button>
+    <h3>+ Tạo Lớp Mới</h3><p class="modal-sub">Tạo không gian lớp học cho năm học</p>
+    <div class="form-row">
+      <div class="form-group"><label>Tên Lớp *</label><input id="aclName" placeholder="10A1"></div>
+      <div class="form-group"><label>Khối</label><select id="aclGrade"><option value="10">Khối 10</option><option value="11">Khối 11</option><option value="12">Khối 12</option></select></div>
+    </div>
+    <div class="form-group" style="margin-top:10px;">
+      <label>Phân Công GVCN (Tùy chọn — có thể bổ nhiệm sau)</label>
+      <select id="aclTeacher" class="form-control" style="width:100%;padding:8px 12px;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:0.85rem;">
+        <option value="">-- Chưa phân công GVCN (Phân công sau) --</option>
+      </select>
+      <small style="color:var(--muted);font-size:0.75rem;margin-top:4px;display:block;">Mặc định không gán GVCN. Hiệu trưởng có thể phân công bổ nhiệm GVCN bất kỳ lúc nào.</small>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('modalAddClass')">Hủy</button>
+      <button class="btn btn-primary" onclick="doAddClass()">Tạo Lớp →</button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Class Modal -->
+<div class="modal-overlay" id="modalEditClass">
+  <div class="modal" style="max-width:480px;">
+    <button class="modal-close" onclick="closeModal('modalEditClass')">✕</button>
+    <h3 style="color:var(--blue);display:flex;align-items:center;gap:8px;">✏️ Chỉnh Sửa Thông Tin Lớp Học</h3>
+    <p class="modal-sub">Thay đổi tên lớp, khối học, phân công/bổ nhiệm giáo viên chủ nhiệm và năm học.</p>
+    <input type="hidden" id="eclClassId">
+    
+    <div class="form-row" style="margin-top:14px;">
+      <div class="form-group">
+        <label>Tên Lớp *</label>
+        <input id="eclName" placeholder="Ví dụ: 10A1, 11 Chuyên Lý" style="font-weight:700;">
+      </div>
+      <div class="form-group">
+        <label>Khối Học</label>
+        <select id="eclGrade">
+          <option value="6">Khối 6</option>
+          <option value="7">Khối 7</option>
+          <option value="8">Khối 8</option>
+          <option value="9">Khối 9</option>
+          <option value="10">Khối 10</option>
+          <option value="11">Khối 11</option>
+          <option value="12">Khối 12</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="form-group" style="margin-top:12px;">
+      <label>Giáo Viên Chủ Nhiệm (GVCN)</label>
+      <select id="eclTeacher" class="form-control" style="width:100%;padding:9px 12px;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:0.88rem;">
+        <option value="">-- Chưa phân công GVCN (Trống) --</option>
+      </select>
+      <small style="color:var(--muted);font-size:0.75rem;margin-top:4px;display:block;">Bổ nhiệm GVCN mới hoặc chuyển lớp. Nếu giáo viên đang chủ nhiệm lớp khác sẽ tự động được bàn giao sang lớp này.</small>
+    </div>
+
+    <div class="form-group" style="margin-top:12px;">
+      <label>Năm Học</label>
+      <input id="eclYear" placeholder="2025-2026" style="font-family:var(--font-mono);">
+    </div>
+
+    <div class="modal-footer" style="margin-top:20px;display:flex;justify-content:space-between;align-items:center;">
+      <button class="btn btn-danger btn-sm" id="btnDeleteClass" onclick="doDeleteClass()" style="padding:6px 12px;font-size:0.78rem;display:inline-flex;align-items:center;gap:4px;">
+        🗑️ Xóa Lớp
+      </button>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-outline" onclick="closeModal('modalEditClass')">Hủy</button>
+        <button class="btn btn-primary" onclick="doEditClass()">Lưu Thay Đổi →</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Bàn Giao / Phân Công GVCN cho Lớp -->
+<div class="modal-overlay" id="modalAssignTeacher">
+  <div class="modal" style="max-width:440px;">
+    <button class="modal-close" onclick="closeModal('modalAssignTeacher')">✕</button>
+    <h3 style="color:var(--blue);display:flex;align-items:center;gap:8px;">👨‍🏫 Phân Công / Bổ Nhiệm GVCN</h3>
+    <p class="modal-sub">Bổ nhiệm giáo viên làm GVCN hoặc hủy phân công chủ nhiệm cho lớp này.</p>
+    <input type="hidden" id="asgClassId">
+    <div class="form-group" style="margin-top:14px;">
+      <label>Lớp Học</label>
+      <input id="asgClassName" readonly style="background:rgba(255,255,255,0.05);color:#94a3b8;cursor:not-allowed;font-weight:700;">
+    </div>
+    <div class="form-group" style="margin-top:12px;">
+      <label>Chọn Giáo Viên Chủ Nhiệm</label>
+      <select id="asgTeacherSelect" class="form-control" style="width:100%;padding:10px 12px;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:0.9rem;"></select>
+      <small style="color:var(--muted);font-size:0.75rem;margin-top:4px;display:block;">Chọn "-- Hủy phân công --" nếu muốn lớp ở trạng thái chưa có GVCN.</small>
+    </div>
+    <div class="modal-footer" style="margin-top:20px;">
+      <button class="btn btn-outline" onclick="closeModal('modalAssignTeacher')">Hủy</button>
+      <button class="btn btn-primary" onclick="doAssignTeacher()">Lưu Phân Công →</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Tạo Đơn Nghỉ Phép (Học sinh / Phụ huynh) -->
+<div class="modal-overlay" id="modalCreateLeave">
+  <div class="modal" style="max-width:500px;">
+    <button class="modal-close" onclick="closeModal('modalCreateLeave')">✕</button>
+    <h3 style="color:var(--purple);">📝 Tạo Đơn Xin Nghỉ Phép</h3>
+    <p class="modal-sub">Đơn sẽ được gửi trực tiếp đến tài khoản Giáo Viên Chủ Nhiệm phụ trách lớp.</p>
+    <div class="form-group" id="grpLeaveChildSelect" style="display:none;margin-top:12px;">
+      <label>Chọn Con Em *</label>
+      <select id="leaveStudentId" style="width:100%;padding:9px 12px;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--text);"></select>
+    </div>
+    <div class="form-row" style="margin-top:12px;">
+      <div class="form-group">
+        <label>Từ Ngày *</label>
+        <input type="date" id="leaveStartDate" style="width:100%;">
+      </div>
+      <div class="form-group">
+        <label>Đến Ngày *</label>
+        <input type="date" id="leaveEndDate" style="width:100%;">
+      </div>
+    </div>
+    <div class="form-group" style="margin-top:12px;">
+      <label>Lý Do Nghỉ Phép *</label>
+      <textarea id="leaveReason" rows="3" placeholder="Ví dụ: Em bị ốm cần đi khám bác sĩ, xin phép nghỉ 1 ngày..." style="width:100%;padding:9px 12px;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:inherit;font-size:0.88rem;resize:vertical;"></textarea>
+    </div>
+    <div class="modal-footer" style="margin-top:16px;">
+      <button class="btn btn-outline" onclick="closeModal('modalCreateLeave')">Hủy</button>
+      <button class="btn btn-primary" onclick="submitCreateLeave()">Gửi Đơn Xin Phép →</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Gửi Khiếu Nại Nề Nếp & Điểm Danh (Học sinh / Phụ huynh) -->
+<div class="modal-overlay" id="modalCreateDispute">
+  <div class="modal" style="max-width:520px;">
+    <button class="modal-close" onclick="closeModal('modalCreateDispute')">✕</button>
+    <h3 style="color:var(--orange);">⚖️ Gửi Khiếu Nại Điểm Danh / Nề Nếp</h3>
+    <p class="modal-sub">Nếu bị chấm nhầm đi muộn hoặc sai đồng phục, bạn có thể gửi phản ánh đối chiếu.</p>
+    <div class="form-group" id="grpDisputeChildSelect" style="display:none;margin-top:12px;">
+      <label>Chọn Con Em *</label>
+      <select id="disputeStudentId" style="width:100%;padding:9px 12px;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--text);"></select>
+    </div>
+    <div class="form-group" style="margin-top:12px;">
+      <label>Bản Ghi Điểm Danh (Tùy chọn)</label>
+      <select id="disputeAttendanceLogId" style="width:100%;padding:9px 12px;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:0.85rem;"></select>
+    </div>
+    <div class="form-group" style="margin-top:12px;">
+      <label>Lý Do Khiếu Nại / Minh Oan *</label>
+      <textarea id="disputeReason" rows="3" placeholder="Ví dụ: Em đã đến lúc 06:55 nhưng camera lúc đó bị nghẽn mạng..." style="width:100%;padding:9px 12px;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:inherit;font-size:0.88rem;resize:vertical;"></textarea>
+    </div>
+    <div class="modal-footer" style="margin-top:16px;">
+      <button class="btn btn-outline" onclick="closeModal('modalCreateDispute')">Hủy</button>
+      <button class="btn btn-primary" style="background:var(--orange);" onclick="submitCreateDispute()">Gửi Khiếu Nại →</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: XUẤT BÁO CÁO ĐIỂM DANH CHUYÊN SÂU (PDF / WORD / CSV) UI/UX PRO MAX -->
+<div class="modal-overlay" id="modalExportAttendance">
+  <div class="modal export-modal-wrap">
+    <button class="modal-close" onclick="closeModal('modalExportAttendance')">✕</button>
+
+    <!-- HEADER -->
+    <div class="export-hdr">
+      <div class="export-hdr-icon">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>
+      </div>
+      <div style="flex:1;">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <h3 style="margin:0;font-size:1.25rem;font-weight:800;letter-spacing:-0.3px;">Xuất Báo Cáo Điểm Danh Chuyên Sâu</h3>
+          <span style="background:rgba(59,130,246,0.15);color:#60a5fa;border:1px solid rgba(59,130,246,0.3);padding:2px 8px;border-radius:12px;font-size:0.7rem;font-weight:700;">PRO MAX</span>
+        </div>
+        <div class="modal-sub" style="margin:4px 0 0 0;" id="exportSchoolSub">Trích xuất nhật ký chuyên cần theo khung giờ & ngày, tạo file PDF và Word chuẩn văn bản sư phạm</div>
+      </div>
+    </div>
+
+    <!-- QUICK PRESETS -->
+    <div class="export-presets-bar">
+      <span style="font-size:0.75rem;font-weight:700;color:var(--text);display:flex;align-items:center;gap:4px;">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> Chọn Nhanh:
+      </span>
+      <button type="button" class="export-preset-chip active" id="chip_today_all" onclick="applyExportPreset('today_all')">⚡ Hôm Nay (Cả ngày)</button>
+      <button type="button" class="export-preset-chip" id="chip_morning_rush" onclick="applyExportPreset('morning_rush')">🌅 Vào Lớp Sáng (06:30 - 08:30)</button>
+      <button type="button" class="export-preset-chip" id="chip_afternoon_rush" onclick="applyExportPreset('afternoon_rush')">🌇 Giờ Chiều (11:30 - 17:30)</button>
+      <button type="button" class="export-preset-chip" id="chip_yesterday" onclick="applyExportPreset('yesterday')">⏮️ Hôm Qua</button>
+      <button type="button" class="export-preset-chip" id="chip_last7days" onclick="applyExportPreset('last7days')">📅 7 Ngày Qua</button>
+      <button type="button" class="export-preset-chip" id="chip_this_month" onclick="applyExportPreset('this_month')">🗓️ Tháng Này</button>
+    </div>
+
+    <!-- DATE & TIME INPUTS (Theo yêu cầu: khung giờ bắt đầu, ngày bắt đầu (dd/mm/yyyy), khung giờ kết thúc, ngày kết thúc (dd/mm/yyyy)) -->
+    <div class="export-range-grid">
+      <!-- MỐC BẮT ĐẦU -->
+      <div class="export-time-card">
+        <div class="export-time-card-hdr">
+          <span class="export-badge-start">BẮT ĐẦU</span>
+          <span>Thời Gian Bắt Đầu</span>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="margin-bottom:0;">
+            <label style="display:flex;align-items:center;gap:5px;">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+              <span>Ngày bắt đầu (dd/mm/yyyy) *</span>
+            </label>
+            <input type="date" id="exportDateFrom" onchange="onExportFilterChange()">
+          </div>
+          <div class="form-group" style="margin-bottom:0;">
+            <label style="display:flex;align-items:center;gap:5px;">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              <span>Khung giờ bắt đầu (hh:mm) *</span>
+            </label>
+            <input type="time" id="exportTimeFrom" value="06:00" onchange="onExportFilterChange()">
+          </div>
+        </div>
+        <div id="exportStartHelper" style="font-size:0.72rem;color:var(--muted);margin-top:6px;"></div>
+      </div>
+
+      <!-- MỐC KẾT THÚC -->
+      <div class="export-time-card">
+        <div class="export-time-card-hdr">
+          <span class="export-badge-end">KẾT THÚC</span>
+          <span>Thời Gian Kết Thúc</span>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="margin-bottom:0;">
+            <label style="display:flex;align-items:center;gap:5px;">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+              <span>Ngày kết thúc (dd/mm/yyyy) *</span>
+            </label>
+            <input type="date" id="exportDateTo" onchange="onExportFilterChange()">
+          </div>
+          <div class="form-group" style="margin-bottom:0;">
+            <label style="display:flex;align-items:center;gap:5px;">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              <span>Khung giờ kết thúc (hh:mm) *</span>
+            </label>
+            <input type="time" id="exportTimeTo" value="18:00" onchange="onExportFilterChange()">
+          </div>
+        </div>
+        <div id="exportEndHelper" style="font-size:0.72rem;color:var(--muted);margin-top:6px;"></div>
+      </div>
+    </div>
+
+    <!-- PRO FILTERS -->
+    <div class="export-filters-grid">
+      <div class="form-group" style="margin-bottom:0;">
+        <label>Lớp Học</label>
+        <select id="exportClassSelect" onchange="onExportFilterChange()">
+          <option value="">Tất cả các lớp</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom:0;">
+        <label>Trạng Thái Chuyên Cần</label>
+        <select id="exportStatusSelect" onchange="onExportFilterChange()">
+          <option value="">Tất cả trạng thái</option>
+          <option value="ON_TIME">✓ Đúng Giờ</option>
+          <option value="LATE">⏰ Đi Trễ</option>
+          <option value="ABSENT">✕ Vắng Không Phép</option>
+          <option value="EXCUSED">📝 Nghỉ Có Phép</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom:0;">
+        <label>Nề Nếp Đồng Phục</label>
+        <select id="exportUniformSelect" onchange="onExportFilterChange()">
+          <option value="">Tất cả nề nếp</option>
+          <option value="OK">✓ Chuẩn Đồng Phục</option>
+          <option value="VIOLATION">✕ Vi Phạm Đồng Phục</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom:0;">
+        <label>Chế Độ Khung Giờ</label>
+        <select id="exportTimeMode" onchange="onExportFilterChange()">
+          <option value="daily">Khung giờ lặp lại mỗi ngày</option>
+          <option value="continuous">Mốc thời gian liên tục</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- LIVE KPI STATS STRIP -->
+    <div class="export-stats-strip" id="exportStatsStrip">
+      <div class="export-stat-box"><div class="export-stat-num" style="color:var(--text);" id="expStatTotal">0</div><div class="export-stat-label">Tổng Lượt Quét</div></div>
+      <div class="export-stat-box"><div class="export-stat-num" style="color:var(--green);" id="expStatOnTime">0</div><div class="export-stat-label">Đúng Giờ (%)</div></div>
+      <div class="export-stat-box"><div class="export-stat-num" style="color:var(--orange);" id="expStatLate">0</div><div class="export-stat-label">Đi Trễ</div></div>
+      <div class="export-stat-box"><div class="export-stat-num" style="color:var(--red);" id="expStatAbsent">0</div><div class="export-stat-label">Vắng / Phép</div></div>
+      <div class="export-stat-box"><div class="export-stat-num" style="color:#fb7185;" id="expStatUniform">0</div><div class="export-stat-label">Lỗi Đồng Phục</div></div>
+    </div>
+
+    <!-- LIVE PREVIEW TABLE -->
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+      <span style="font-size:0.78rem;font-weight:700;color:var(--muted);display:flex;align-items:center;gap:6px;">
+        <span class="cam-pulse-dot online" style="width:7px;height:7px;"></span>
+        <span id="exportPreviewCount">Xem trước dữ liệu (0 bản ghi)</span>
+      </span>
+      <span style="font-size:0.72rem;color:var(--muted);" id="exportRangeSummary"></span>
+    </div>
+    <div class="export-preview-table-wrap">
+      <table class="export-preview-table">
+        <thead>
+          <tr>
+            <th>Thời Gian</th>
+            <th>Mã HS</th>
+            <th>Họ Và Tên</th>
+            <th>Lớp</th>
+            <th>Trạng Thái</th>
+            <th>Đồng Phục</th>
+            <th>Điểm Trừ</th>
+          </tr>
+        </thead>
+        <tbody id="exportPreviewBody">
+          <tr><td colspan="7" style="text-align:center;padding:18px;color:var(--muted);">Đang nạp dữ liệu xem trước...</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- MODAL FOOTER WITH EXPORT ACTIONS -->
+    <div class="modal-footer" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+      <div style="font-size:0.74rem;color:var(--muted);display:flex;align-items:center;gap:6px;">
+        <span>💡 Tệp xuất ra có Quốc hiệu, Tiêu ngữ, Bảng số liệu và 3 Chữ ký phê duyệt.</span>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button type="button" class="btn btn-outline" onclick="closeModal('modalExportAttendance')">Đóng</button>
+        <button type="button" class="btn btn-outline" onclick="exportAttendanceFilteredCSV()" title="Tải tệp bảng tính CSV">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <span>Xuất CSV</span>
+        </button>
+        <button type="button" class="btn-export-word" onclick="executeExportWord()" title="Tải xuống tệp Word (.doc) chỉnh sửa được">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/><line x1="8" y1="9" x2="10" y2="9"/></svg>
+          <span>Xuất File Word (.DOC)</span>
+        </button>
+        <button type="button" class="btn-export-pdf" onclick="executeExportPDF()" title="Mở bản in A4 và Lưu dưới dạng PDF">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+          <span>Xuất File PDF (In / Lưu PDF)</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,144 @@
+  <div class="view" id="view-homeroom">
+    <!-- Hero Banner with Class Info & Attendance Gauge -->
+    <div class="homeroom-hero" id="homeroomHero">
+      <div style="flex:1;min-width:280px;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap;">
+          <span class="chip chip-blue" style="font-size:0.75rem;padding:3px 10px;font-weight:700;" id="hrBadgeGrade">Khối —</span>
+          <span class="chip chip-purple" style="font-size:0.75rem;padding:3px 10px;font-weight:700;" id="hrBadgeYear">2025-2026</span>
+          <span class="chip chip-green" style="font-size:0.75rem;padding:3px 10px;font-weight:700;" id="hrBadgeToday">Sĩ Số Hôm Nay</span>
+        </div>
+        <div class="homeroom-hero-title">
+          <span id="hrClassName">🏫 Lớp Chủ Nhiệm</span>
+          <div id="hrClassSelectorWrap" style="display:none;margin-left:12px;">
+            <select id="hrClassSelect" onchange="onHomeroomClassSelect(this.value)" class="form-control" style="padding:4px 10px;font-size:0.85rem;background:rgba(15,23,42,0.85);border-color:var(--blue);color:#f8fafc;border-radius:8px;"></select>
+          </div>
+        </div>
+        <div class="homeroom-hero-sub">
+          <span>👩‍🏫 GVCN: <strong id="hrTeacherName" style="color:#f8fafc;">—</strong></span>
+          <span>•</span>
+          <span>🎟️ Mã mời: <code id="hrInviteCode" style="color:var(--blue);font-weight:700;">—</code></span>
+          <span>•</span>
+          <span id="hrDateDisplay" style="color:#94a3b8;">Hôm Nay</span>
+        </div>
+      </div>
+      <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;">
+        <div class="homeroom-rate-badge">
+          <div class="homeroom-rate-val" id="hrRateVal">0%</div>
+          <div class="homeroom-rate-label">Tỉ Lệ Đến Lớp</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 6 Real-time KPI Cards Grid -->
+    <div class="kpi-grid" style="grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); margin-bottom: 20px;">
+      <div class="kpi-card kpi-card-blue">
+        <div class="kpi-top">
+          <div class="kpi-label">Tổng Sĩ Số</div>
+          <div class="kpi-icon kpi-icon-blue">👥</div>
+        </div>
+        <div class="kpi-val" id="hrKpiTotal">0</div>
+        <div class="kpi-trend"><span style="color:var(--muted);font-size:0.75rem;">Học sinh chính thức</span></div>
+      </div>
+
+      <div class="kpi-card kpi-card-emerald">
+        <div class="kpi-top">
+          <div class="kpi-label">Đúng Giờ</div>
+          <div class="kpi-icon kpi-icon-emerald">🟢</div>
+        </div>
+        <div class="kpi-val" id="hrKpiOnTime">0</div>
+        <div class="kpi-trend trend-up"><span id="hrKpiOnTimePct">0%</span></div>
+      </div>
+
+      <div class="kpi-card kpi-card-amber">
+        <div class="kpi-top">
+          <div class="kpi-label">Đi Trễ</div>
+          <div class="kpi-icon kpi-icon-amber">🟡</div>
+        </div>
+        <div class="kpi-val" id="hrKpiLate">0</div>
+        <div class="kpi-trend trend-down-warn"><span id="hrKpiLatePct">0%</span></div>
+      </div>
+
+      <div class="kpi-card kpi-card-purple">
+        <div class="kpi-top">
+          <div class="kpi-label">Có Phép</div>
+          <div class="kpi-icon kpi-icon-purple">🔵</div>
+        </div>
+        <div class="kpi-val" id="hrKpiExcused">0</div>
+        <div class="kpi-trend" style="background:rgba(168,85,247,0.15);color:#c084fc;border:1px solid rgba(168,85,247,0.25);"><span id="hrKpiExcusedPct">0%</span></div>
+      </div>
+
+      <div class="kpi-card kpi-card-rose">
+        <div class="kpi-top">
+          <div class="kpi-label">Vắng Chưa Phép</div>
+          <div class="kpi-icon kpi-icon-rose">🔴</div>
+        </div>
+        <div class="kpi-val" id="hrKpiAbsent" style="color:#fb7185;">0</div>
+        <div class="kpi-trend trend-down-warn"><span id="hrKpiAbsentPct">0%</span></div>
+      </div>
+
+      <div class="kpi-card kpi-card-cyan">
+        <div class="kpi-top">
+          <div class="kpi-label">Lỗi Nề Nếp / Áo</div>
+          <div class="kpi-icon kpi-icon-cyan">⚠️</div>
+        </div>
+        <div class="kpi-val" id="hrKpiViolations" style="color:#22d3ee;">0</div>
+        <div class="kpi-trend" style="background:rgba(34,211,238,0.15);color:#22d3ee;border:1px solid rgba(34,211,238,0.25);"><span>Cần nhắc nhở</span></div>
+      </div>
+    </div>
+
+    <!-- Action Toolbar & Quick Actions -->
+    <div style="background:rgba(26,32,48,0.6);backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,0.08);border-radius:16px;padding:14px 18px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+        <button class="btn btn-danger" style="display:inline-flex;align-items:center;gap:6px;font-weight:700;box-shadow:0 4px 14px rgba(239,68,68,0.3);" onclick="promptNotifyAbsentParents()">
+          📢 1-Chạm Báo Phụ Huynh Vắng (<span id="hrBtnAbsentCount">0</span>)
+        </button>
+        <button class="btn btn-outline" style="display:inline-flex;align-items:center;gap:6px;" onclick="navigate('view-leaves')">
+          📝 Đơn Phép Chờ Duyệt (<span id="hrPendingLeaves">0</span>)
+        </button>
+        <button class="btn btn-outline" style="display:inline-flex;align-items:center;gap:6px;" onclick="navigate('view-disputes')">
+          ⚖️ Khiếu Nại Cấp 1 (<span id="hrPendingDisputes">0</span>)
+        </button>
+      </div>
+
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button class="btn btn-outline" onclick="loadHomeroomView()" title="Tải lại dữ liệu">🔄 Làm Mới</button>
+        <button class="btn btn-primary" onclick="printHomeroomRoster()" style="display:inline-flex;align-items:center;gap:6px;">🖨️ Xuất Sổ Điểm Danh</button>
+      </div>
+    </div>
+
+    <!-- Filter Pills & Search Bar -->
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:16px;">
+      <div style="display:flex;gap:6px;flex-wrap:wrap;" id="hrFilterTabs">
+        <button class="btn btn-sm btn-primary hr-tab-btn active" data-filter="ALL" onclick="filterHomeroomRoster('ALL', this)">Tất Cả (<span id="hrTabAllCnt">0</span>)</button>
+        <button class="btn btn-sm btn-outline hr-tab-btn" data-filter="PRESENT" onclick="filterHomeroomRoster('PRESENT', this)">🟢 Đã Đến (<span id="hrTabPresentCnt">0</span>)</button>
+        <button class="btn btn-sm btn-outline hr-tab-btn" data-filter="ABSENT" onclick="filterHomeroomRoster('ABSENT', this)">🔴 Vắng / Chưa Quét (<span id="hrTabAbsentCnt">0</span>)</button>
+        <button class="btn btn-sm btn-outline hr-tab-btn" data-filter="LATE" onclick="filterHomeroomRoster('LATE', this)">🟡 Đi Trễ (<span id="hrTabLateCnt">0</span>)</button>
+        <button class="btn btn-sm btn-outline hr-tab-btn" data-filter="EXCUSED" onclick="filterHomeroomRoster('EXCUSED', this)">🔵 Có Phép (<span id="hrTabExcusedCnt">0</span>)</button>
+        <button class="btn btn-sm btn-outline hr-tab-btn" data-filter="VIOLATION" onclick="filterHomeroomRoster('VIOLATION', this)">⚠️ Lỗi Đồng Phục (<span id="hrTabViolationsCnt">0</span>)</button>
+      </div>
+
+      <div style="position:relative;width:260px;">
+        <input type="text" id="hrSearchInput" class="form-control" placeholder="🔍 Tìm tên hoặc mã HS..." oninput="onHomeroomSearch(this.value)" style="padding:6px 12px;font-size:0.82rem;border-radius:20px;width:100%;">
+      </div>
+    </div>
+
+    <!-- Classroom Roster Table -->
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:40px;">#</th>
+            <th style="min-width:180px;">Học Sinh</th>
+            <th style="min-width:130px;">Quét Cổng Sáng Nay</th>
+            <th style="min-width:260px;">Điểm Danh 1-Chạm (Tiết 1)</th>
+            <th style="min-width:110px;">Đồng Phục</th>
+            <th style="min-width:140px;">Phép / Ghi Chú</th>
+            <th style="min-width:140px;">Phụ Huynh & Báo Tin</th>
+          </tr>
+        </thead>
+        <tbody id="hrRosterBody">
+          <tr><td colspan="7" style="text-align:center;padding:32px;color:var(--muted);">Đang tải dữ liệu lớp chủ nhiệm...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>

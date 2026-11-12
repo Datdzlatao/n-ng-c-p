@@ -1,0 +1,327 @@
+# -*- coding: utf-8 -*-
+"""
+STANDALONE FACE ENGINE (OpenCV DNN YuNet + SFace)
+Hệ thống nhận diện khuôn mặt độc lập thời gian thực.
+"""
+import os
+import re
+import cv2
+import time
+import queue
+import urllib.request
+import threading
+import numpy as np
+from typing import Optional, List, Dict, Tuple, Any
+
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+DEFAULT_MODELS_DIR = os.path.join(CURRENT_DIR, "assets", "models")
+DEFAULT_FACES_DIR = os.path.join(CURRENT_DIR, "known_faces")
+DEFAULT_CACHE_PATH = os.path.join(CURRENT_DIR, "assets", "embeddings_cache.npz")
+
+YUNET_FILENAME = "face_detection_yunet_2023mar.onnx"
+SFACE_FILENAME = "face_recognition_sface_2021dec.onnx"
+
+YUNET_URLS = [
+    "https://media.githubusercontent.com/media/opencv/opencv_zoo/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx",
+    "https://raw.githubusercontent.com/opencv/opencv_zoo/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx",
+]
+SFACE_URLS = [
+    "https://media.githubusercontent.com/media/opencv/opencv_zoo/main/models/face_recognition_sface/face_recognition_sface_2021dec.onnx",
+    "https://raw.githubusercontent.com/opencv/opencv_zoo/main/models/face_recognition_sface/face_recognition_sface_2021dec.onnx",
+]
+
+
+def ensure_model_file(model_path: str, urls: List[str], expected_min_bytes: int = 100_000) -> bool:
+    if os.path.isfile(model_path) and os.path.getsize(model_path) >= expected_min_bytes:
+        return True
+
+    os.makedirs(os.path.dirname(os.path.abspath(model_path)), exist_ok=True)
+    filename = os.path.basename(model_path)
+    print(f"[MODEL] Đang tải mô hình: {filename}...")
+
+    for url in urls:
+        try:
+            urllib.request.urlretrieve(url, model_path)
+            if os.path.isfile(model_path) and os.path.getsize(model_path) >= expected_min_bytes:
+                print(f"[MODEL] Tải thành công: {filename} ({os.path.getsize(model_path):,} bytes)")
+                return True
+        except Exception as e:
+            print(f"[MODEL] Lỗi tải từ {url}: {e}")
+            if os.path.exists(model_path):
+                try:
+                    os.remove(model_path)
+                except OSError:
+                    pass
+
+    return False
+
+
+class FaceEngine:
+    def __init__(self,
+                 faces_dir: str = DEFAULT_FACES_DIR,
+                 models_dir: str = DEFAULT_MODELS_DIR,
+                 cache_path: str = DEFAULT_CACHE_PATH,
+                 score_threshold: float = 0.65,
+                 nms_threshold: float = 0.30,
+                 cosine_threshold: float = 0.42,
+                 margin_threshold: float = 0.08,
+                 min_face_size: int = 40):
+
+        self.faces_dir = faces_dir
+        self.models_dir = models_dir
+        self.cache_path = cache_path
+        self.score_threshold = score_threshold
+        self.nms_threshold = nms_threshold
+        self.cosine_threshold = cosine_threshold
+        self.margin_threshold = margin_threshold
+        self.min_face_size = min_face_size
+
+        os.makedirs(self.faces_dir, exist_ok=True)
+        os.makedirs(self.models_dir, exist_ok=True)
+
+        self.yunet_path = os.path.join(self.models_dir, YUNET_FILENAME)
+        self.sface_path = os.path.join(self.models_dir, SFACE_FILENAME)
+
+        ensure_model_file(self.yunet_path, YUNET_URLS)
+        ensure_model_file(self.sface_path, SFACE_URLS)
+
+        # Initialize YuNet Detector
+        self.detector = cv2.FaceDetectorYN.create(
+            model=self.yunet_path,
+            config="",
+            input_size=(320, 320),
+            score_threshold=self.score_threshold,
+            nms_threshold=self.nms_threshold,
+            top_k=5000,
+            backend_id=cv2.dnn.DNN_BACKEND_OPENCV,
+            target_id=cv2.dnn.DNN_TARGET_CPU
+        )
+
+        # Initialize SFace Recognizer
+        self.recognizer = cv2.FaceRecognizerSF.create(
+            model=self.sface_path,
+            config="",
+            backend_id=cv2.dnn.DNN_BACKEND_OPENCV,
+            target_id=cv2.dnn.DNN_TARGET_CPU
+        )
+
+        self.current_input_size = (320, 320)
+        self.known_embeddings: List[np.ndarray] = []
+        self.known_ids: List[str] = []
+        self.known_names: List[str] = []
+
+        self.load_known_faces()
+
+    def _update_detector_size(self, w: int, h: int):
+        if (w, h) != self.current_input_size:
+            self.detector.setInputSize((w, h))
+            self.current_input_size = (w, h)
+
+    def extract_embedding_from_image(self, img_bgr: np.ndarray) -> Optional[np.ndarray]:
+        if img_bgr is None or img_bgr.size == 0:
+            return None
+        h, w = img_bgr.shape[:2]
+        self._update_detector_size(w, h)
+        _, faces = self.detector.detect(img_bgr)
+        if faces is None or len(faces) == 0:
+            return None
+
+        # Choose largest face
+        best_face = max(faces, key=lambda f: f[2] * f[3])
+        aligned = self.recognizer.alignCrop(img_bgr, best_face)
+        feature = self.recognizer.feature(aligned)
+        norm = np.linalg.norm(feature)
+        if norm > 1e-6:
+            feature = feature / norm
+        return feature.flatten()
+
+    def load_known_faces(self, force_reload: bool = False):
+        if not force_reload and os.path.isfile(self.cache_path):
+            try:
+                data = np.load(self.cache_path, allow_pickle=True)
+                self.known_ids = list(data["ids"])
+                self.known_names = list(data["names"])
+                self.known_embeddings = list(data["embeddings"])
+                print(f"[FACE ENGINE] Đã nạp {len(self.known_ids)} khuôn mặt từ cache: {os.path.basename(self.cache_path)}")
+                return
+            except Exception as e:
+                print(f"[FACE ENGINE] Cache không đọc được ({e}), quét lại thư mục...")
+
+        self.known_ids.clear()
+        self.known_names.clear()
+        self.known_embeddings.clear()
+
+        valid_exts = {".jpg", ".jpeg", ".png", ".webp"}
+        files = [f for f in os.listdir(self.faces_dir) if os.path.splitext(f)[1].lower() in valid_exts]
+        print(f"[FACE ENGINE] Đang quét {len(files)} ảnh trong {self.faces_dir}...")
+
+        for fname in sorted(files):
+            stem = os.path.splitext(fname)[0]
+            # Convention: "HS01_Nguyen_Van_A.jpg" or "HS01.jpg"
+            parts = stem.split("_", 1)
+            stu_id = parts[0].strip()
+            stu_name = parts[1].replace("_", " ").strip() if len(parts) > 1 else stu_id
+
+            img_path = os.path.join(self.faces_dir, fname)
+            img = cv2.imread(img_path)
+            if img is None:
+                continue
+
+            emb = self.extract_embedding_from_image(img)
+            if emb is not None:
+                self.known_ids.append(stu_id)
+                self.known_names.append(stu_name)
+                self.known_embeddings.append(emb)
+
+        if self.known_ids:
+            try:
+                os.makedirs(os.path.dirname(self.cache_path), exist_ok=True)
+                np.savez_compressed(
+                    self.cache_path,
+                    ids=np.array(self.known_ids),
+                    names=np.array(self.known_names),
+                    embeddings=np.array(self.known_embeddings)
+                )
+                print(f"[FACE ENGINE] Đã lưu cache {len(self.known_ids)} đặc trưng vào {self.cache_path}")
+            except Exception as e:
+                print(f"[FACE ENGINE] Lỗi ghi cache: {e}")
+
+    def register_face(self, student_id: str, student_name: str, image_bgr: np.ndarray, save_disk: bool = True) -> bool:
+        emb = self.extract_embedding_from_image(image_bgr)
+        if emb is None:
+            return False
+
+        if student_id in self.known_ids:
+            idx = self.known_ids.index(student_id)
+            self.known_embeddings[idx] = emb
+            self.known_names[idx] = student_name
+        else:
+            self.known_ids.append(student_id)
+            self.known_names.append(student_name)
+            self.known_embeddings.append(emb)
+
+        if save_disk:
+            safe_name = re.sub(r"[^a-zA-Z0-9_-]", "", student_name.replace(" ", "_"))
+            out_fn = f"{student_id}_{safe_name}.jpg" if safe_name else f"{student_id}.jpg"
+            cv2.imwrite(os.path.join(self.faces_dir, out_fn), image_bgr)
+            try:
+                np.savez_compressed(
+                    self.cache_path,
+                    ids=np.array(self.known_ids),
+                    names=np.array(self.known_names),
+                    embeddings=np.array(self.known_embeddings)
+                )
+            except Exception:
+                pass
+        return True
+
+    def detect_locations(self, frame: np.ndarray) -> List[Tuple[int, int, int, int]]:
+        if frame is None or frame.size == 0:
+            return []
+        h, w = frame.shape[:2]
+        self._update_detector_size(w, h)
+        _, faces = self.detector.detect(frame)
+        if faces is None or len(faces) == 0:
+            return []
+
+        locations = []
+        for face in faces:
+            x, y, fw, fh = int(face[0]), int(face[1]), int(face[2]), int(face[3])
+            if fw < self.min_face_size or fh < self.min_face_size:
+                continue
+            top = max(0, y)
+            left = max(0, x)
+            bottom = min(h, y + fh)
+            right = min(w, x + fw)
+            locations.append((top, right, bottom, left))
+        return locations
+
+    def recognize(self, frame: np.ndarray) -> List[Dict[str, Any]]:
+        if frame is None or frame.size == 0:
+            return []
+        h, w = frame.shape[:2]
+        self._update_detector_size(w, h)
+        _, faces = self.detector.detect(frame)
+        if faces is None or len(faces) == 0:
+            return []
+
+        results = []
+        embeddings_matrix = np.array(self.known_embeddings) if self.known_embeddings else None
+
+        for face in faces:
+            x, y, fw, fh = int(face[0]), int(face[1]), int(face[2]), int(face[3])
+            if fw < self.min_face_size or fh < self.min_face_size:
+                continue
+
+            top = max(0, y)
+            left = max(0, x)
+            bottom = min(h, y + fh)
+            right = min(w, x + fw)
+            loc = (top, right, bottom, left)
+
+            aligned = self.recognizer.alignCrop(frame, face)
+            feat = self.recognizer.feature(aligned)
+            norm = np.linalg.norm(feat)
+            if norm > 1e-6:
+                feat = feat / norm
+            probe = feat.flatten()
+
+            best_id = None
+            best_name = None
+            best_sim = 0.0
+            status = "stranger"
+
+            if embeddings_matrix is not None and len(embeddings_matrix) > 0:
+                sims = np.dot(embeddings_matrix, probe)
+                sorted_indices = np.argsort(sims)[::-1]
+                top1_idx = sorted_indices[0]
+                top1_sim = float(sims[top1_idx])
+                top2_sim = float(sims[sorted_indices[1]]) if len(sorted_indices) > 1 else 0.0
+
+                if top1_sim >= self.cosine_threshold and (top1_sim - top2_sim >= self.margin_threshold or len(sorted_indices) == 1):
+                    best_id = self.known_ids[top1_idx]
+                    best_name = self.known_names[top1_idx]
+                    best_sim = top1_sim
+                    status = "ok"
+                else:
+                    best_sim = top1_sim
+
+            results.append({
+                "student_id": best_id,
+                "name": best_name if best_name else "Người lạ",
+                "location": loc,
+                "confidence": round(best_sim, 4),
+                "status": status,
+                "landmarks": face[4:14].reshape((5, 2)).tolist() if len(face) >= 14 else []
+            })
+
+        return results
+
+
+class ThreadedCamera:
+    """Luồng capture camera độc lập 30 FPS, chống drop lag RTSP."""
+    def __init__(self, src=0):
+        self.cap = cv2.VideoCapture(src)
+        self.lock = threading.Lock()
+        self.stopped = False
+        self.ret, self.frame = self.cap.read()
+        self.thread = threading.Thread(target=self._update, daemon=True)
+        self.thread.start()
+
+    def _update(self):
+        while not self.stopped:
+            ret, frame = self.cap.read()
+            with self.lock:
+                self.ret = ret
+                if ret:
+                    self.frame = frame
+            time.sleep(0.01)
+
+    def read(self):
+        with self.lock:
+            return self.ret, (self.frame.copy() if self.frame is not None else None)
+
+    def release(self):
+        self.stopped = True
+        self.thread.join(timeout=1.0)
+        self.cap.release()

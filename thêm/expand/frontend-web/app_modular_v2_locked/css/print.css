@@ -1,0 +1,6 @@
+  @media print {
+    body * { visibility: hidden; }
+    #view-homeroom, #view-homeroom * { visibility: visible; }
+    #view-homeroom { position: absolute; left: 0; top: 0; width: 100%; }
+    .btn, .rollcall-btn-group button:not(.active-ontime):not(.active-late):not(.active-excused):not(.active-absent) { display: none !important; }
+  }

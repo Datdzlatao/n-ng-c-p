@@ -1,0 +1,21 @@
+{
+  "calibrated_at": "2026-09-16 14:15:00",
+  "note": "Cấu hình HSV tối ưu độ chính xác cao cho camera cổng trường học (áo trắng + quần tối)",
+  "white": {
+    "s_max": 70,
+    "v_min": 145
+  },
+  "blue": {
+    "h_min": 85,
+    "h_max": 138,
+    "s_min": 40,
+    "v_min": 35
+  },
+  "dark_pants": {
+    "v_max": 115,
+    "ratio_min": 0.42
+  },
+  "options": {
+    "waist_up_auto_ignore_pants": true
+  }
+}

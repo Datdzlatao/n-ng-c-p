@@ -1,0 +1,87 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helper functions ──────────────────────────────────────────────────────
+    
+    /// Kiểm tra user đã xác thực chưa
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    /// Lấy role của user hiện tại từ document
+    function getUserRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    function isAdmin()   { return getUserRole() == 'admin'; }
+    function isTeacher() { return getUserRole() == 'teacher' || isAdmin(); }
+    function isStudent() { return isAuthenticated(); }
+
+    // ── Users Collection ──────────────────────────────────────────────────────
+    match /users/{userId} {
+      // Đọc: user chỉ đọc được profile của mình; Admin đọc tất cả
+      allow read: if isAuthenticated() && 
+                     (request.auth.uid == userId || isAdmin());
+      
+      // Tạo: chỉ Admin
+      allow create: if isAdmin();
+      
+      // Cập nhật: user cập nhật profile của mình (trừ role); Admin cập nhật tất cả
+      allow update: if isAuthenticated() && (
+        (request.auth.uid == userId && 
+         !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role'])) ||
+        isAdmin()
+      );
+      
+      // Xóa: chỉ Admin
+      allow delete: if isAdmin();
+    }
+
+    // ── Sessions Collection ───────────────────────────────────────────────────
+    match /sessions/{sessionId} {
+      // Đọc: tất cả user đã đăng nhập
+      allow read: if isAuthenticated();
+      
+      // Tạo/Cập nhật: chỉ Teacher và Admin
+      allow create, update: if isTeacher();
+      
+      // Xóa: chỉ Admin
+      allow delete: if isAdmin();
+    }
+
+    // ── Attendances Collection ────────────────────────────────────────────────
+    match /attendances/{attendanceId} {
+      // Đọc: Student đọc attendance của mình; Teacher/Admin đọc tất cả
+      allow read: if isAuthenticated() && (
+        resource.data.studentId == request.auth.uid || isTeacher()
+      );
+      
+      // Tạo: user đã đăng nhập chỉ tạo attendance của mình
+      allow create: if isAuthenticated() && 
+                       request.resource.data.studentId == request.auth.uid;
+      
+      // Cập nhật/Xóa: chỉ Teacher và Admin
+      allow update, delete: if isTeacher();
+    }
+
+    // ── Face Data Collection ──────────────────────────────────────────────────
+    match /face_data/{studentId} {
+      // Đọc: chỉ system (qua service account) và Admin
+      // Student KHÔNG được đọc embedding của mình (privacy)
+      allow read: if isAdmin();
+      
+      // Tạo/Cập nhật: Teacher và Admin (khi đăng ký face)
+      allow create, update: if isTeacher();
+      
+      // Xóa: chỉ Admin
+      allow delete: if isAdmin();
+    }
+
+    // ── Classes Collection ────────────────────────────────────────────────────
+    match /classes/{classId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+  }
+}

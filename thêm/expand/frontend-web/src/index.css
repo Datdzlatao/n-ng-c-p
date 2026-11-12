@@ -1,0 +1,58 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #0f1117;
+  --surface: #1a1d27;
+  --card: #212435;
+  --primary: #4f8ef7;
+  --text: #e8eaf0;
+  --muted: #9ca3af;
+  --border: rgba(255, 255, 255, 0.08);
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--text);
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  min-height: 100vh;
+  margin: 0;
+  /* Tắt tap-highlight màu xanh trên iOS/Android */
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ── Mobile touch & interactive optimization ───────────────────────────── */
+
+/* Đảm bảo mọi button đều có touch target tối thiểu 44px và con trỏ pointer */
+button, a[role="button"], [role="button"], [role="tab"], select, summary {
+  cursor: pointer;
+  min-height: 44px;
+  min-width: 44px;
+}
+
+a {
+  cursor: pointer;
+}
+
+/* Ẩn scrollbar mà vẫn scroll được */
+.scrollbar-none::-webkit-scrollbar { display: none; }
+.scrollbar-none { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* iOS safe-area bottom padding cho FAB */
+@supports (padding: env(safe-area-inset-bottom)) {
+  .pb-safe {
+    padding-bottom: max(24px, env(safe-area-inset-bottom));
+  }
+}
+
+/* Date input dark theme trên iOS */
+input[type="date"], input[type="time"] {
+  color-scheme: dark;
+}
+
+/* Smooth momentum scrolling on iOS */
+.overflow-y-auto, .overflow-x-auto {
+  -webkit-overflow-scrolling: touch;
+}
+

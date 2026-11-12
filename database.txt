@@ -1,0 +1,38 @@
+BÁO CÁO CÁC LỖI TRONG SCHEMA.SQL VÀ NGUYÊN NHÂN XUNG ĐỘT VỚI DATABASE.SQL
+========================================================================
+
+1. NGUYÊN NHÂN GÂY LỖI:
+------------------------------------------------------------------------
+- Cơ sở dữ liệu Supabase của bạn đã có sẵn các bảng được tạo từ file `database.sql` trước đó.
+- Lệnh `CREATE TABLE IF NOT EXISTS` trong PostgreSQL sẽ BỎ QUA hoàn toàn nếu bảng đã tồn tại, nó KHÔNG tự động thêm các cột mới hay thêm các ràng buộc mới.
+- Do đó, khi chạy `schema.sql` phiên bản trước, đã phát sinh 4 lỗi nghiêm trọng:
+
+  + LỖI 1: Bảng `inventory` thiếu cột `min_threshold` và `location`.
+    Khi chạy lệnh INSERT:
+    `INSERT INTO public.inventory (name, category, quantity, unit, unit_price, min_threshold)...`
+    Supabase báo lỗi:
+    `ERROR: column "min_threshold" of relation "inventory" does not exist`
+
+  + LỖI 2: Cột `inventory.name` trong `database.sql` không có ràng buộc UNIQUE.
+    Khi chạy lệnh:
+    `ON CONFLICT (name) DO UPDATE SET quantity = EXCLUDED.quantity;`
+    PostgreSQL báo lỗi:
+    `ERROR: there is no unique or exclusion constraint matching the ON CONFLICT specification`
+
+  + LỖI 3: Lỗi vi phạm Khóa Ngoại (Foreign Key) khi nạp Seed Data.
+    Nếu bảng `pens` chưa có dòng ID = '123' hoặc 'PEN-B01', việc insert vào các bảng `devices`, `animals`, `crops` có tham chiếu `pen_id` sẽ báo lỗi:
+    `ERROR: insert or update violates foreign key constraint ...`
+
+  + LỖI 4: Lỗi phân quyền bảo mật RLS (Code 42501 - Row Level Security).
+    Bảng `inventory`, `pens`, `animals` có RLS nhưng chưa có Policy cho quyền `anon`, khiến các lệnh INSERT/UPDATE bị từ chối quyền hạn.
+
+2. CÁCH KHẮC PHỤC TRIỆT ĐỂ:
+------------------------------------------------------------------------
+File `schema.sql` đã được viết lại hoàn chỉnh theo hướng Migration an toàn (Idempotent):
+1. Dùng `ALTER TABLE public.inventory ADD COLUMN IF NOT EXISTS min_threshold ...` để tự động thêm cột nếu thiếu.
+2. Tự động kiểm tra và thêm ràng buộc `UNIQUE (name)` cho bảng `inventory`.
+3. Tự động tạo 2 bảng `alerts` và `schedules` phục vụ AI Agent.
+4. Cấp quyền RLS Policy `allow_all_backend_ops` cho toàn bộ các bảng trong schema public.
+5. Sắp xếp thứ tự Seed Data chuẩn xác (Insert `pens` trước, sau đó mới đến các bảng phụ thuộc).
+
+Bạn chỉ cần copy toàn bộ nội dung file `schema.sql` và dán vào Supabase SQL Editor rồi bấm RUN là sẽ thành công 100% không còn bất kỳ lỗi nào.

@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Changelog — Điểm Danh & Nề Nếp STEM Pro v5.2</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Be+Vietnam+Pro:wght@400;600;700;800&display=swap');
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d1117;--surface:#161b22;--border:#30363d;
+  --green:#3fb950;--red:#f85149;--yellow:#d29922;--blue:#58a6ff;--purple:#bc8cff;--orange:#ffa657;
+  --text:#e6edf3;--muted:#8b949e;
+}
+body{background:var(--bg);color:var(--text);font-family:'Be Vietnam Pro',sans-serif;min-height:100vh;padding:0 0 60px}
+header{
+  background:linear-gradient(135deg,#0d1117 0%,#1a2340 50%,#0d1117 100%);
+  border-bottom:1px solid var(--border);
+  padding:48px 40px 36px;text-align:center;
+  position:relative;overflow:hidden;
+}
+.version-badge{
+  display:inline-block;background:var(--green);color:#0d1117;
+  font-weight:800;font-size:.8rem;padding:6px 18px;border-radius:20px;
+  letter-spacing:.08em;margin-bottom:18px;
+}
+header h1{font-size:2.2rem;font-weight:800;letter-spacing:-.02em;margin-bottom:8px;}
+header h1 span{color:var(--blue);}
+header p{color:var(--muted);font-size:.95rem;}
+.container{max-width:1050px;margin:0 auto;padding:0 24px;}
+
+.stats-row{
+  display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:16px;
+  margin:40px 0 48px;
+}
+.stat{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:12px;padding:20px 16px;text-align:center;
+}
+.stat .num{font-size:2.2rem;font-weight:800;display:block;}
+.stat .lbl{font-size:.78rem;color:var(--muted);margin-top:4px;text-transform:uppercase;letter-spacing:.06em;}
+.stat.green .num{color:var(--green);}
+.stat.red   .num{color:var(--red);}
+.stat.blue  .num{color:var(--blue);}
+.stat.purple .num{color:var(--purple);}
+
+.file-section{margin-bottom:36px;}
+.file-header{
+  display:flex;align-items:center;gap:12px;
+  padding:16px 20px;background:var(--surface);
+  border:1px solid var(--border);border-radius:12px 12px 0 0;
+}
+.file-icon{font-size:1.2rem;}
+.file-name{font-family:'JetBrains Mono',monospace;font-size:1rem;font-weight:700;color:var(--blue);}
+.file-tags{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;}
+.tag{
+  font-size:.7rem;font-weight:700;padding:3px 10px;border-radius:20px;
+  letter-spacing:.05em;text-transform:uppercase;
+}
+.tag.bug{background:rgba(248,81,73,.15);color:var(--red);border:1px solid rgba(248,81,73,.3);}
+.tag.new{background:rgba(63,185,80,.15);color:var(--green);border:1px solid rgba(63,185,80,.3);}
+.tag.new-file{background:rgba(188,140,255,.15);color:var(--purple);border:1px solid rgba(188,140,255,.3);}
+
+.file-body{
+  border:1px solid var(--border);border-top:none;
+  border-radius:0 0 12px 12px;overflow:hidden;
+}
+.change-row{
+  display:flex;gap:0;border-bottom:1px solid var(--border);
+  transition:background .15s;
+}
+.change-row:last-child{border-bottom:none;}
+.change-row:hover{background:rgba(255,255,255,.03);}
+.change-type{
+  min-width:110px;display:flex;align-items:center;justify-content:center;
+  font-size:.72rem;font-weight:700;letter-spacing:.06em;
+  padding:16px 10px;
+}
+.change-type.bug{color:var(--red);background:rgba(248,81,73,.07);}
+.change-type.new{color:var(--green);background:rgba(63,185,80,.07);}
+.change-type.update{color:var(--blue);background:rgba(88,166,255,.07);}
+.change-body{padding:16px 20px;flex:1;}
+.change-title{font-weight:700;font-size:.95rem;margin-bottom:6px;}
+.change-desc{font-size:.85rem;color:var(--muted);line-height:1.55;}
+code{
+  font-family:'JetBrains Mono',monospace;font-size:.82rem;
+  background:rgba(88,166,255,.1);color:var(--blue);
+  padding:2px 6px;border-radius:4px;
+}
+</style>
+</head>
+<body>
+
+<header>
+  <span class="version-badge">PHIÊN BẢN v5.2 PRO</span>
+  <h1>NHẬT KÝ NÂNG CẤP HỆ THỐNG <span>STEM PRO</span></h1>
+  <p>Tổng hợp toàn bộ thay đổi kiến trúc Đa Trường Học (Multi-Tenant), RBAC 5 Vai Trò & UI Launchpad (Update 5)</p>
+</header>
+
+<div class="container">
+
+  <div class="stats-row">
+    <div class="stat green">
+      <span class="num">5</span>
+      <span class="lbl">Vai Trò Phân Quyền</span>
+    </div>
+    <div class="stat blue">
+      <span class="num">8</span>
+      <span class="lbl">Điểm Hiệu Chỉnh Logic</span>
+    </div>
+    <div class="stat purple">
+      <span class="num">1-Touch</span>
+      <span class="lbl">Chu Trình Phụ Huynh</span>
+    </div>
+    <div class="stat red">
+      <span class="num">0ms</span>
+      <span class="lbl">Độ Trễ Camera Edge</span>
+    </div>
+  </div>
+
+  <!-- SECTION 1: ARCHITECTURE -->
+  <div class="file-section">
+    <div class="file-header">
+      <span class="file-icon">🏛️</span>
+      <span class="file-name">Kiến Trúc Đa Trường Học (Multi-Tenant) & 5 Vai Trò (RBAC)</span>
+      <div class="file-tags"><span class="tag new">Mới v5.2</span></div>
+    </div>
+    <div class="file-body">
+      <div class="change-row">
+        <div class="change-type new">TÍNH NĂNG</div>
+        <div class="change-body">
+          <div class="change-title">1. Nguyên tắc Đặc Quyền Tối Thiểu (Least Privilege) & Tách Bạch Trách Nhiệm</div>
+          <div class="change-desc">
+            - Bỏ quyền của Hiệu Trưởng can thiệp/sửa ảnh khuôn mặt AI từng học sinh để bảo mật dữ liệu sinh trắc học.<br>
+            - Tách biệt Quản lý thiết bị (Hiệu Trưởng thêm/xóa trạm Camera) khỏi quyền Giám sát vận hành hằng ngày (Giám Thị chỉ xem video live).<br>
+            - Phân cấp Phó Hiệu Trưởng kế thừa quyền BGH nhưng không được xóa Server trường hay phân quyền cấp cao.
+          </div>
+        </div>
+      </div>
+      <div class="change-row">
+        <div class="change-type update">CẬP NHẬT</div>
+        <div class="change-body">
+          <div class="change-title">2. Quy Trình Khiếu Nại 2 Cấp (Two-tier Dispute Resolution)</div>
+          <div class="change-desc">
+            - Cấp 1: GVCN xem ảnh gốc camera lúc vào cổng đối chiếu với giải trình của học sinh (ví dụ: mặc áo khoác giữ ấm), bấm chấp thuận tự động hoàn điểm (+5 điểm).<br>
+            - Cấp 2: Giám Thị toàn trường tiếp nhận các khiếu nại phức tạp do GVCN leo thang lên.
+          </div>
+        </div>
+      </div>
+      <div class="change-row">
+        <div class="change-type update">CẬP NHẬT</div>
+        <div class="change-body">
+          <div class="change-title">3. Chấm Điểm Thi Đua Tách Biệt Phê Duyệt Cuối</div>
+          <div class="change-desc">Giám Thị chấm điểm chuyên cần, trang phục, phong trào các lớp cuối tuần/tháng $\to$ Hiệu Trưởng ký duyệt điện tử trước khi công bố.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SECTION 2: UI/UX LAUNCHPAD -->
+  <div class="file-section">
+    <div class="file-header">
+      <span class="file-icon">🖥️</span>
+      <span class="file-name">Giao Diện Web Desktop Launchpad & Mobile Vertical Card Feed</span>
+      <div class="file-tags"><span class="tag new">UI/UX v5.2</span></div>
+    </div>
+    <div class="file-body">
+      <div class="change-row">
+        <div class="change-type new">UI WEB</div>
+        <div class="change-body">
+          <div class="change-title">Desktop Launchpad Icons Grid (Thân thiện Người lớn tuổi)</div>
+          <div class="change-desc">
+            Bố trí các ô icon to bản 80x80px, tiêu đề tiếng Việt rõ ràng (15-16px), màu sắc trang nhã, huy hiệu đếm số liệu thời gian thực (ví dụ: 3 em chờ duyệt, 1 khiếu nại mới) và nút quay lại Launchpad 1-chạm.
+          </div>
+        </div>
+      </div>
+      <div class="change-row">
+        <div class="change-type new">MOBILE</div>
+        <div class="change-body">
+          <div class="change-title">Danh Sách Thẻ Cuộn Dọc (Vertical Card Feed)</div>
+          <div class="change-desc">
+            Tối ưu cho thao tác vuốt ngón cái, touch target $\ge 52\text{px}$, độ tương phản cao WCAG AAA, màu sắc trực quan (Xanh lá = Hợp lệ, Cam = Đi trễ, Đỏ = Vi phạm).
+          </div>
+        </div>
+      </div>
+      <div class="change-row">
+        <div class="change-type new">PHỤ HUYNH</div>
+        <div class="change-body">
+          <div class="change-title">Chu Trình Phụ Huynh Tìm Con 1-Chạm (Low-Tech Onboarding)</div>
+          <div class="change-desc">
+            Thanh tìm kiếm to bản $\to$ Chọn thẻ con $\to$ Nhập SĐT $\to$ Mở ngay Bảng trạng thái con kèm ảnh camera chụp thực tế lúc vào cổng trường.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>

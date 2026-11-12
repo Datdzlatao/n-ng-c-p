@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bao Cao Diem Danh — 24/08/2026</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@300;400;600;700&display=swap');
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Be Vietnam Pro', sans-serif;
+    background: #f0f4f8;
+    color: #1a202c;
+    min-height: 100vh;
+  }
+  header {
+    background: linear-gradient(135deg, #1a56db 0%, #0e9f6e 100%);
+    color: white;
+    padding: 28px 40px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  header h1 { font-size: 1.7rem; font-weight: 700; }
+  header p  { font-size: 0.9rem; opacity: 0.85; margin-top: 4px; }
+  .badge {
+    background: rgba(255,255,255,0.2);
+    border-radius: 20px; padding: 6px 16px;
+    font-weight: 600; font-size: 0.9rem;
+  }
+  .container { max-width: 1200px; margin: 0 auto; padding: 32px 24px; }
+  .stat-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 20px; margin-bottom: 32px;
+  }
+  .stat-card {
+    background: white; border-radius: 16px; padding: 24px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+    display: flex; flex-direction: column; align-items: flex-start;
+  }
+  .stat-card .label { font-size: 0.8rem; color: #718096; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+  .stat-card .value { font-size: 2.4rem; font-weight: 700; margin-top: 8px; }
+  .stat-card.green .value { color: #0e9f6e; }
+  .stat-card.red   .value { color: #e02424; }
+  .stat-card.blue  .value { color: #1a56db; }
+  .stat-card.orange .value { color: #d97706; }
+  .charts-grid {
+    display: grid; grid-template-columns: 2fr 1fr;
+    gap: 20px; margin-bottom: 32px;
+  }
+  @media (max-width: 768px) { .charts-grid { grid-template-columns: 1fr; } }
+  .card {
+    background: white; border-radius: 16px; padding: 24px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+  }
+  .card h2 { font-size: 1rem; font-weight: 700; color: #2d3748; margin-bottom: 16px; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+  th { background: #ebf4ff; color: #2b6cb0; font-weight: 600; padding: 10px 12px; text-align: left; }
+  td { padding: 9px 12px; border-bottom: 1px solid #edf2f7; }
+  tr:hover td { background: #f7fafc; }
+  .pct { font-size: 0.75rem; color: #718096; margin-top: 4px; }
+  .empty { color: #a0aec0; font-style: italic; text-align: center; padding: 20px; }
+  footer { text-align: center; color: #a0aec0; font-size: 0.8rem; padding: 24px; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Bao Cao Diem Danh STEM</h1>
+    <p>Ngay: 24/08/2026 &nbsp;|&nbsp; Tao luc: 21:03:57</p>
+  </div>
+  <span class="badge">STEM Project</span>
+</header>
+
+<div class="container">
+  <!-- Stat cards -->
+  <div class="stat-grid">
+    <div class="stat-card blue">
+      <span class="label">Tong Hoc Sinh</span>
+      <span class="value">1</span>
+    </div>
+    <div class="stat-card green">
+      <span class="label">Co Mat</span>
+      <span class="value">0</span>
+      <span class="pct">0% tong so</span>
+    </div>
+    <div class="stat-card red">
+      <span class="label">Vang Mat</span>
+      <span class="value">1</span>
+      <span class="pct">100% tong so</span>
+    </div>
+    <div class="stat-card orange">
+      <span class="label">Vi Pham</span>
+      <span class="value">24</span>
+      <span class="pct">Khong deo the</span>
+    </div>
+  </div>
+
+  <!-- Charts -->
+  <div class="charts-grid">
+    <div class="card">
+      <h2>Luot Quet QR Theo Gio</h2>
+      <canvas id="hourChart" height="200"></canvas>
+    </div>
+    <div class="card">
+      <h2>Ti Le Co Mat / Vang</h2>
+      <canvas id="pieChart" height="200"></canvas>
+    </div>
+  </div>
+
+  <!-- Tables -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:32px;">
+    <div class="card">
+      <h2>Danh Sach Vang Mat (1)</h2>
+      <table><thead><tr><th>Ma HS</th><th>Ho Ten</th><th>Lop</th></tr></thead><tbody><tr><td>HS001</td><td>VANG MINH PHUC</td><td>12C1</td></tr></tbody></table>
+    </div>
+    <div class="card">
+      <h2>Vi Pham Khong Deo The (24)</h2>
+      <table><thead><tr><th>Thoi Gian</th><th>Ma HS</th><th>Ho Ten</th><th>Mo Ta</th></tr></thead><tbody><tr><td>24/08/2026 20:42:36</td><td>UNKNOWN</td><td>Chua xac dinh danh tinh</td><td>Can kiem tra thu cong: Trang phuc khong xac dinh (98%) → Se chup anh kiem tra</td></tr><tr><td>24/08/2026 20:42:38</td><td>STRANGER</td><td>Nguoi la</td><td>Nguoi la - khong trong danh sach</td></tr><tr><td>24/08/2026 20:42:48</td><td>HS011</td><td>Vang Minh Phuc</td><td>Chua quet the</td></tr><tr><td>24/08/2026 20:46:06</td><td>UNKNOWN</td><td>Chua xac dinh danh tinh</td><td>Can kiem tra thu cong: Trang phuc khong xac dinh (98%) → Se chup anh kiem tra</td></tr><tr><td>24/08/2026 20:46:11</td><td>HS011</td><td>Vang Minh Phuc</td><td>Chua quet the</td></tr><tr><td>24/08/2026 20:46:23</td><td>STRANGER</td><td>Nguoi la</td><td>Nguoi la - khong trong danh sach</td></tr><tr><td>24/08/2026 20:47:14</td><td>STRANGER</td><td>Nguoi la</td><td>Nguoi la - khong trong danh sach</td></tr><tr><td>24/08/2026 20:47:19</td><td>HS011</td><td>Vang Minh Phuc</td><td>Chua quet the</td></tr><tr><td>24/08/2026 20:48:14</td><td>UNKNOWN</td><td>Chua xac dinh danh tinh</td><td>Can kiem tra thu cong: Trang phuc khong xac dinh (85%) → Se chup anh kiem tra</td></tr><tr><td>24/08/2026 20:48:17</td><td>STRANGER</td><td>Nguoi la</td><td>Nguoi la - khong trong danh sach</td></tr><tr><td>24/08/2026 20:48:56</td><td>HS011</td><td>Vang Minh Phuc</td><td>Chua quet the</td></tr><tr><td>24/08/2026 20:49:03</td><td>STRANGER</td><td>Nguoi la</td><td>Nguoi la - khong trong danh sach</td></tr><tr><td>24/08/2026 20:49:58</td><td>UNKNOWN</td><td>Chua xac dinh danh tinh</td><td>Can kiem tra thu cong: Trang phuc khong xac dinh (97%) → Se chup anh kiem tra</td></tr><tr><td>24/08/2026 20:49:59</td><td>HS011</td><td>Vang Minh Phuc</td><td>Chua quet the</td></tr><tr><td>24/08/2026 20:50:14</td><td>STRANGER</td><td>Nguoi la</td><td>Nguoi la - khong trong danh sach</td></tr><tr><td>24/08/2026 20:51:38</td><td>STRANGER</td><td>Nguoi la</td><td>Nguoi la - khong trong danh sach</td></tr><tr><td>24/08/2026 20:52:11</td><td>HS011</td><td>Vang Minh Phuc</td><td>Chua quet the</td></tr><tr><td>24/08/2026 20:52:15</td><td>STRANGER</td><td>Nguoi la</td><td>Nguoi la - khong trong danh sach</td></tr><tr><td>24/08/2026 20:52:57</td><td>UNKNOWN</td><td>Chua xac dinh danh tinh</td><td>Can kiem tra thu cong: Trang phuc khong xac dinh (100%) → Se chup anh kiem tra</td></tr><tr><td>24/08/2026 20:53:03</td><td>STRANGER</td><td>Nguoi la</td><td>Nguoi la - khong trong danh sach</td></tr><tr><td>24/08/2026 20:53:23</td><td>HS011</td><td>Vang Minh Phuc</td><td>Chua quet the</td></tr><tr><td>24/08/2026 21:03:08</td><td>UNKNOWN</td><td>Chua xac dinh danh tinh</td><td>Can kiem tra thu cong: Trang phuc khong xac dinh (100%) → Se chup anh kiem tra</td></tr><tr><td>24/08/2026 21:03:20</td><td>HS011</td><td>VANG MINH PHUC</td><td>Chua quet the</td></tr><tr><td>24/08/2026 21:03:25</td><td>STRANGER</td><td>Nguoi la</td><td>Nguoi la - khong trong danh sach</td></tr></tbody></table>
+    </div>
+  </div>
+</div>
+
+<footer>He Thong Diem Danh QR + Nhan Dien Mat — STEM Project v2.0</footer>
+
+<script>
+const hourLabels = [];
+const hourData   = [];
+
+new Chart(document.getElementById('hourChart'), {
+  type: 'bar',
+  data: {
+    labels: hourLabels.length ? hourLabels : ['Chua co du lieu'],
+    datasets: [{
+      label: 'Luot quet QR',
+      data: hourData.length ? hourData : [0],
+      backgroundColor: 'rgba(26, 86, 219, 0.7)',
+      borderRadius: 6,
+    }]
+  },
+  options: {
+    responsive: true, plugins: { legend: { display: false } },
+    scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+  }
+});
+
+new Chart(document.getElementById('pieChart'), {
+  type: 'doughnut',
+  data: {
+    labels: ['Co Mat', 'Vang Mat'],
+    datasets: [{
+      data: [0, 1],
+      backgroundColor: ['#0e9f6e', '#e02424'],
+      borderWidth: 2, borderColor: '#fff',
+    }]
+  },
+  options: {
+    responsive: true,
+    plugins: {
+      legend: { position: 'bottom' },
+    }
+  }
+});
+</script>
+</body>
+</html>

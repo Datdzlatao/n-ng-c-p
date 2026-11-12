@@ -1,0 +1,248 @@
+  <div class="view" id="view-config">
+    <div class="section-title" style="margin-bottom:20px;">⚙️ Cấu Hình Server Trường & Bộ Lọc Lỗi AI Camera</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));gap:20px;max-width:900px;width:100%;">
+      
+      <!-- GEMINI AI SMART RULE GENERATOR (FILE & TEXT) -->
+      <div style="background:linear-gradient(135deg, rgba(168,85,247,0.1), rgba(79,142,247,0.1));border:1.5px solid var(--purple);border-radius:12px;padding:20px;grid-column:1/-1;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;flex-wrap:wrap;gap:8px;">
+          <div style="font-weight:800;font-size:1.05rem;color:var(--purple);display:flex;align-items:center;gap:8px;">
+            🤖 AI Gemini Phân Tích Nội Quy & Tự Động Tạo Bộ Lọc Lỗi Cho Camera Pi
+          </div>
+          <div style="display:flex;gap:6px;">
+            <button class="btn btn-outline btn-sm" id="tabBtnFile" onclick="switchRuleInputTab('file')" style="border-color:var(--purple);color:var(--purple);font-weight:700;">📄 Tải File (PDF/Word - Max 50MB)</button>
+            <button class="btn btn-outline btn-sm" id="tabBtnText" onclick="switchRuleInputTab('text')">✍️ Dán Văn Bản</button>
+          </div>
+        </div>
+        <div style="font-size:0.8rem;color:var(--muted);margin-bottom:14px;">
+          Hiệu trưởng có thể <b>tải trực tiếp file sổ tay / văn bản nội quy trường học (PDF, DOCX, DOC, TXT lên tới 50MB)</b> hoặc dán văn bản. AI Gemini sẽ tự động đọc tài liệu, trích xuất toàn bộ các tiêu chí nề nếp và nạp xuống các máy Raspberry Pi tại cổng trường.
+        </div>
+
+        <!-- TAB 1: FILE UPLOAD -->
+        <div id="ruleTabFile" style="display:block;">
+          <div style="border:2px dashed rgba(168,85,247,0.4);border-radius:10px;padding:24px;text-align:center;background:rgba(0,0,0,0.15);cursor:pointer;" onclick="document.getElementById('ruleFileInput').click()">
+            <input type="file" id="ruleFileInput" accept=".pdf,.docx,.doc,.txt" style="display:none;" onchange="onRuleFileSelected(this)">
+            <div style="font-size:2.2rem;margin-bottom:6px;">📤</div>
+            <div style="font-weight:700;font-size:0.95rem;margin-bottom:4px;" id="ruleFileLabel">Bấm để chọn hoặc kéo thả file Sổ tay Nội quy vào đây</div>
+            <div style="font-size:0.78rem;color:var(--muted);">Hỗ trợ: <b>PDF (.pdf), Word (.docx, .doc), Text (.txt)</b> · Giới hạn: <b>Tối đa 50MB</b></div>
+            <div id="ruleFileInfo" style="margin-top:10px;font-size:0.82rem;color:var(--green);font-weight:600;display:none;"></div>
+          </div>
+          <div style="display:flex;gap:10px;margin-top:12px;align-items:center;">
+            <button class="btn btn-primary" id="btnUploadAiFile" style="background:var(--purple);" onclick="uploadRulesFileWithAI()">
+              🚀 Tải Lên & Để AI Phân Tích (Max 50MB)
+            </button>
+            <span id="aiRuleFileStatus" style="font-size:0.82rem;color:var(--muted);"></span>
+          </div>
+        </div>
+
+        <!-- TAB 2: TEXT INPUT -->
+        <div id="ruleTabText" style="display:none;">
+          <div style="display:flex;justify-content:flex-end;margin-bottom:6px;">
+            <button class="btn btn-outline btn-sm" onclick="fillSampleSchoolRules()" style="border-color:var(--purple);color:var(--purple);font-size:0.75rem;">📝 Dán Mẫu Nội Quy Nhanh</button>
+          </div>
+          <textarea id="aiRuleInput" rows="4" placeholder="Ví dụ: Học sinh vào trường trước 07:15. Đi trễ sau 07:30 trừ 2 điểm. Bắt buộc mặc áo sơ mi trắng có phù hiệu trường, quần tây đen/xanh đen. Cấm đi dép lê không quai hậu, cấm nhuộm tóc, cấm đội mũ trong sân trường..." style="width:100%;padding:10px 14px;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:0.88rem;outline:none;resize:vertical;"></textarea>
+          <div style="display:flex;gap:10px;margin-top:12px;align-items:center;">
+            <button class="btn btn-primary" id="btnParseAiRule" style="background:var(--purple);" onclick="parseRulesWithAI()">
+              ✨ AI Phân Tích & Nạp Xuống Camera Pi
+            </button>
+            <span id="aiRuleStatus" style="font-size:0.82rem;color:var(--muted);"></span>
+          </div>
+        </div>
+
+        <!-- RESULT BOX -->
+        <div id="aiRuleResultBox" style="display:none;background:var(--card);border-radius:8px;padding:14px;margin-top:14px;border:1px solid var(--border);">
+          <div style="font-weight:700;color:var(--green);font-size:0.88rem;margin-bottom:6px;">✅ Bộ Lọc Lỗi Camera Đã Được Tạo Tự Động:</div>
+          <div id="aiRuleSummaryText" style="font-size:0.85rem;color:var(--text);margin-bottom:10px;line-height:1.5;"></div>
+          <details style="font-size:0.78rem;color:var(--muted);cursor:pointer;">
+            <summary>🔍 Xem chi tiết cấu trúc JSON nạp vào Raspberry Pi</summary>
+            <pre id="aiRuleJsonPreview" style="background:var(--bg);padding:10px;border-radius:6px;margin-top:6px;overflow-x:auto;color:var(--blue);"></pre>
+          </details>
+        </div>
+      </div>
+
+      <!-- Form Config -->
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px;">
+        <div style="font-weight:700;margin-bottom:4px;">📋 Yêu Cầu Form Đăng Ký</div>
+        <div style="font-size:0.78rem;color:var(--muted);margin-bottom:16px;">Bật/tắt các trường bắt buộc theo từng vai trò</div>
+        <div id="formConfigToggles"></div>
+        <button class="btn btn-primary" style="margin-top:16px;width:100%;" onclick="saveFormConfig()">💾 Lưu Cấu Hình Form</button>
+      </div>
+      <!-- Rules Config (Multi-Shift: Sáng · Chiều · Tối) -->
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;flex-wrap:wrap;gap:8px;">
+          <div style="font-weight:700;font-size:1.05rem;">⏰ Quy Định Khung Giờ Điểm Danh & Nề Nếp</div>
+          <span class="badge badge-success" style="font-size:0.75rem;padding:3px 8px;">⚡ Đồng bộ tức thì</span>
+        </div>
+        <div style="font-size:0.78rem;color:var(--muted);margin-bottom:16px;">
+          Cài đặt khung giờ riêng biệt cho <b>Buổi Sáng</b>, <b>Buổi Chiều</b> và <b>Buổi Tối</b>. Dữ liệu sẽ lưu vào hệ thống và đồng bộ ngay lập tức với Camera AI.
+        </div>
+
+        <!-- 🌅 CA SÁNG -->
+        <div style="background:var(--overlay);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:14px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+            <div style="font-weight:700;color:var(--text);display:flex;align-items:center;gap:6px;">
+              <span>🌅</span> <span>Buổi Sáng</span>
+            </div>
+            <label class="toggle" title="Bật/Tắt điểm danh ca sáng">
+              <input type="checkbox" id="cfgMorningEnabled" checked>
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
+            <div class="form-group" style="margin-bottom:0;"><label style="font-size:0.75rem;">Mở Cổng Vào</label><input id="cfgMorningFrom" type="time" value="06:00"></div>
+            <div class="form-group" style="margin-bottom:0;"><label style="font-size:0.75rem;">Đúng Giờ Đến</label><input id="cfgMorningOnTime" type="time" value="07:15"></div>
+            <div class="form-group" style="margin-bottom:0;"><label style="font-size:0.75rem;">Trễ Tối Đa (Đóng Cổng)</label><input id="cfgMorningLate" type="time" value="07:30"></div>
+            <div class="form-group" style="margin-bottom:0;"><label style="font-size:0.75rem;">Tan Trường Ra Về</label><input id="cfgMorningCheckout" type="time" value="11:30"></div>
+          </div>
+          <div style="background:var(--card);border:1px dashed var(--border);border-radius:8px;padding:10px;display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+            <div class="form-group" style="margin-bottom:0;">
+              <label style="font-size:0.75rem;">Tên Ca / Mô Tả</label>
+              <input id="cfgMorningName" type="text" value="Chính khóa buổi sáng" placeholder="VD: Chính khóa sáng" style="font-size:0.8rem;padding:6px 10px;">
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+              <label style="font-size:0.75rem;">Trừ Điểm Trễ Ca Sáng</label>
+              <input id="cfgMorningLateD" type="number" value="2" min="0" max="20" style="font-size:0.8rem;padding:6px 10px;">
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+              <label style="font-size:0.75rem;">Phương Thức Điểm Danh</label>
+              <select id="cfgMorningAuthMode" style="font-size:0.8rem;padding:6px 10px;background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:6px;width:100%;">
+                <option value="ALL">Khuôn mặt + Mã QR</option>
+                <option value="FACE_ONLY">Chỉ Khuôn Mặt AI</option>
+                <option value="QR_ONLY">Chỉ Mã QR Thẻ</option>
+              </select>
+            </div>
+            <div style="display:flex;flex-direction:column;justify-content:center;gap:6px;padding-top:14px;">
+              <label style="display:flex;align-items:center;gap:6px;font-size:0.78rem;cursor:pointer;margin:0;">
+                <input type="checkbox" id="cfgMorningUniformCheck" checked style="accent-color:var(--purple);">
+                <span>👗 Quét kiểm tra đồng phục</span>
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;font-size:0.78rem;cursor:pointer;margin:0;">
+                <input type="checkbox" id="cfgMorningNotify" checked style="accent-color:var(--purple);">
+                <span>📲 Báo tin phụ huynh</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- ☀️ CA CHIỀU -->
+        <div style="background:var(--overlay);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:14px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+            <div style="font-weight:700;color:var(--text);display:flex;align-items:center;gap:6px;">
+              <span>☀️</span> <span>Buổi Chiều</span>
+            </div>
+            <label class="toggle" title="Bật/Tắt điểm danh ca chiều">
+              <input type="checkbox" id="cfgAfternoonEnabled" checked>
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
+            <div class="form-group" style="margin-bottom:0;"><label style="font-size:0.75rem;">Mở Cổng Vào</label><input id="cfgAfternoonFrom" type="time" value="12:30"></div>
+            <div class="form-group" style="margin-bottom:0;"><label style="font-size:0.75rem;">Đúng Giờ Đến</label><input id="cfgAfternoonOnTime" type="time" value="13:15"></div>
+            <div class="form-group" style="margin-bottom:0;"><label style="font-size:0.75rem;">Trễ Tối Đa (Đóng Cổng)</label><input id="cfgAfternoonLate" type="time" value="13:30"></div>
+            <div class="form-group" style="margin-bottom:0;"><label style="font-size:0.75rem;">Tan Trường Ra Về</label><input id="cfgAfternoonCheckout" type="time" value="17:00"></div>
+          </div>
+          <div style="background:var(--card);border:1px dashed var(--border);border-radius:8px;padding:10px;display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+            <div class="form-group" style="margin-bottom:0;">
+              <label style="font-size:0.75rem;">Tên Ca / Mô Tả</label>
+              <input id="cfgAfternoonName" type="text" value="Buổi 2 / Ngoại khóa" placeholder="VD: Buổi 2 / Ngoại khóa" style="font-size:0.8rem;padding:6px 10px;">
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+              <label style="font-size:0.75rem;">Trừ Điểm Trễ Ca Chiều</label>
+              <input id="cfgAfternoonLateD" type="number" value="2" min="0" max="20" style="font-size:0.8rem;padding:6px 10px;">
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+              <label style="font-size:0.75rem;">Phương Thức Điểm Danh</label>
+              <select id="cfgAfternoonAuthMode" style="font-size:0.8rem;padding:6px 10px;background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:6px;width:100%;">
+                <option value="ALL">Khuôn mặt + Mã QR</option>
+                <option value="FACE_ONLY">Chỉ Khuôn Mặt AI</option>
+                <option value="QR_ONLY">Chỉ Mã QR Thẻ</option>
+              </select>
+            </div>
+            <div style="display:flex;flex-direction:column;justify-content:center;gap:6px;padding-top:14px;">
+              <label style="display:flex;align-items:center;gap:6px;font-size:0.78rem;cursor:pointer;margin:0;">
+                <input type="checkbox" id="cfgAfternoonUniformCheck" checked style="accent-color:var(--purple);">
+                <span>👗 Quét kiểm tra đồng phục</span>
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;font-size:0.78rem;cursor:pointer;margin:0;">
+                <input type="checkbox" id="cfgAfternoonNotify" checked style="accent-color:var(--purple);">
+                <span>📲 Báo tin phụ huynh</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- 🌙 CA TỐI (TỰ HỌC / NỘI TRÚ) -->
+        <div style="background:var(--overlay);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:14px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+            <div style="font-weight:700;color:var(--text);display:flex;align-items:center;gap:6px;">
+              <span>🌙</span> <span>Buổi Tối (Tự học / Nội trú)</span>
+            </div>
+            <label class="toggle" title="Bật/Tắt điểm danh ca tối">
+              <input type="checkbox" id="cfgEveningEnabled">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
+            <div class="form-group" style="margin-bottom:0;"><label style="font-size:0.75rem;">Mở Cổng Vào</label><input id="cfgEveningFrom" type="time" value="18:00"></div>
+            <div class="form-group" style="margin-bottom:0;"><label style="font-size:0.75rem;">Đúng Giờ Đến</label><input id="cfgEveningOnTime" type="time" value="18:45"></div>
+            <div class="form-group" style="margin-bottom:0;"><label style="font-size:0.75rem;">Trễ Tối Đa (Đóng Cổng)</label><input id="cfgEveningLate" type="time" value="19:15"></div>
+            <div class="form-group" style="margin-bottom:0;"><label style="font-size:0.75rem;">Tan Trường Ra Về</label><input id="cfgEveningCheckout" type="time" value="21:30"></div>
+          </div>
+          <div style="background:var(--card);border:1px dashed var(--border);border-radius:8px;padding:10px;display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+            <div class="form-group" style="margin-bottom:0;">
+              <label style="font-size:0.75rem;">Tên Ca / Mô Tả</label>
+              <input id="cfgEveningName" type="text" value="Tự học / Nội trú" placeholder="VD: Tự học tối" style="font-size:0.8rem;padding:6px 10px;">
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+              <label style="font-size:0.75rem;">Trừ Điểm Trễ Ca Tối</label>
+              <input id="cfgEveningLateD" type="number" value="1" min="0" max="20" style="font-size:0.8rem;padding:6px 10px;">
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+              <label style="font-size:0.75rem;">Phương Thức Điểm Danh</label>
+              <select id="cfgEveningAuthMode" style="font-size:0.8rem;padding:6px 10px;background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:6px;width:100%;">
+                <option value="ALL">Khuôn mặt + Mã QR</option>
+                <option value="FACE_ONLY">Chỉ Khuôn Mặt AI</option>
+                <option value="QR_ONLY">Chỉ Mã QR Thẻ</option>
+              </select>
+            </div>
+            <div style="display:flex;flex-direction:column;justify-content:center;gap:6px;padding-top:14px;">
+              <label style="display:flex;align-items:center;gap:6px;font-size:0.78rem;cursor:pointer;margin:0;">
+                <input type="checkbox" id="cfgEveningUniformCheck" style="accent-color:var(--purple);">
+                <span>👗 Quét kiểm tra đồng phục</span>
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;font-size:0.78rem;cursor:pointer;margin:0;">
+                <input type="checkbox" id="cfgEveningNotify" checked style="accent-color:var(--purple);">
+                <span>📲 Báo tin phụ huynh</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Legacy inputs fallback -->
+        <input type="hidden" id="cfgFrom" value="06:00">
+        <input type="hidden" id="cfgOnTime" value="07:15">
+        <input type="hidden" id="cfgLate" value="07:30">
+
+        <!-- THANG ĐIỂM & ĐỒNG PHỤC -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
+          <div class="form-group" style="margin-bottom:0;"><label style="font-size:0.75rem;">Điểm Trừ Trễ</label><input id="cfgLateD" type="number" value="2" min="0" max="20"></div>
+          <div class="form-group" style="margin-bottom:0;"><label style="font-size:0.75rem;">Trừ Sai Đồng Phục</label><input id="cfgUniformD" type="number" value="3" min="0" max="20"></div>
+        </div>
+
+        <div class="config-row" style="margin:12px 0;padding:10px 0;border-top:1px solid var(--border);border-bottom:1px solid var(--border);">
+          <div>
+            <div class="config-label" style="font-weight:700;">👗 Kiểm Tra Trang Phục Toàn Trường</div>
+            <div class="config-desc">Bật/tắt kiểm tra nề nếp trang phục trên toàn bộ hệ thống</div>
+          </div>
+          <label class="toggle"><input type="checkbox" id="cfgUniformCheck" checked><span class="toggle-slider"></span></label>
+        </div>
+        <button class="btn btn-primary" style="margin-top:6px;width:100%;font-weight:700;background:var(--purple);" onclick="saveRulesConfig()">💾 Lưu & Đồng Bộ Quy Định Tức Thì</button>
+      </div>
+      <!-- Invite Codes -->
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px;grid-column:1/-1;">
+        <div style="font-weight:700;margin-bottom:4px;">🔐 Mã Mời Theo Vai Trò</div>
+        <div style="font-size:0.78rem;color:var(--muted);margin-bottom:16px;">Phân phát mã mời bí mật cho từng nhóm nhân sự</div>
+        <div id="inviteCodes" style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;"></div>
+        <button class="btn btn-danger" style="margin-top:16px;" onclick="rotateInviteCodes()">🔄 Tạo Mã Mới (Vô Hiệu Cũ)</button>
+      </div>
+    </div>
+  </div>

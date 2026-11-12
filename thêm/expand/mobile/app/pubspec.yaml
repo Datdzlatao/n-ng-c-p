@@ -1,0 +1,109 @@
+name: smart_attendance
+description: Hệ Thống Điểm Danh Thông Minh — QR Code, Nhận diện khuôn mặt & Kiểm tra trang phục
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # ── State Management & DI ──────────────────────────────────────────────────
+  flutter_bloc: ^8.1.6        # BLoC pattern - quản lý state
+  get_it: ^7.7.0              # Service Locator / Dependency Injection
+  equatable: ^2.0.5           # So sánh objects theo value (dùng trong BLoC)
+
+  # ── Functional Programming ─────────────────────────────────────────────────
+  dartz: ^0.10.1              # Either<Failure, Success> pattern cho clean arch
+
+  # ── Navigation ─────────────────────────────────────────────────────────────
+  go_router: ^14.2.7          # Declarative routing với deep link support
+
+  # ── Firebase ───────────────────────────────────────────────────────────────
+  firebase_core: ^3.4.0       # Firebase khởi tạo
+  firebase_auth: ^5.2.0       # Xác thực người dùng (email/password)
+  cloud_firestore: ^5.4.0     # Realtime NoSQL database
+  firebase_storage: ^12.2.0   # Lưu trữ ảnh khuôn mặt đã đăng ký
+
+  # ── Camera & Image Processing ─────────────────────────────────────────────
+  camera: ^0.11.0+2           # Truy cập camera device
+  image: ^4.2.0               # Xử lý ảnh (resize, convert format)
+  image_picker: ^1.1.2        # Chọn ảnh từ gallery
+
+  # ── AI / Machine Learning ─────────────────────────────────────────────────
+  google_mlkit_face_detection: ^0.11.0  # ML Kit: phát hiện khuôn mặt on-device
+  tflite_flutter: ^0.10.4               # TFLite: face embedding + dress code classify
+
+  # ── QR Code ────────────────────────────────────────────────────────────────
+  mobile_scanner: ^5.2.3      # QR scanner hiệu năng cao
+  qr_flutter: ^4.1.0          # Tạo QR code widget
+
+  # ── Security & Encryption ─────────────────────────────────────────────────
+  encrypt: ^5.0.3             # AES-256 encryption cho QR payload
+  flutter_secure_storage: ^9.2.2  # Lưu token/key an toàn trong Keychain/Keystore
+  crypto: ^3.0.5              # HMAC-SHA256 signature
+
+  # ── Local Storage (Offline) ────────────────────────────────────────────────
+  drift: ^2.18.0              # SQLite ORM (type-safe, offline support)
+  sqlite3_flutter_libs: ^0.5.24  # SQLite native libs
+  path_provider: ^2.1.4       # Đường dẫn thư mục local
+
+  # ── Network ────────────────────────────────────────────────────────────────
+  dio: ^5.7.0                 # HTTP client mạnh (interceptors, retry)
+  connectivity_plus: ^6.0.5   # Kiểm tra kết nối mạng
+
+  # ── Permissions ────────────────────────────────────────────────────────────
+  permission_handler: ^11.3.1  # Xin quyền camera, storage
+
+  # ── UI Components ──────────────────────────────────────────────────────────
+  fl_chart: ^0.68.0           # Charts thống kê điểm danh
+  shimmer: ^3.0.0             # Loading skeleton effect
+  lottie: ^3.1.2              # Hiệu ứng animation JSON (success/fail)
+  cached_network_image: ^3.4.0  # Cache ảnh từ network
+  flutter_animate: ^4.5.0     # Micro-animations mượt mà
+
+  # ── Export Reports ─────────────────────────────────────────────────────────
+  excel: ^4.0.6               # Xuất file Excel (.xlsx)
+  pdf: ^3.11.1                # Xuất file PDF
+  share_plus: ^10.0.3         # Chia sẻ file
+
+  # ── Notifications ──────────────────────────────────────────────────────────
+  flutter_local_notifications: ^17.2.3  # Push notification local
+
+  # ── Utilities ──────────────────────────────────────────────────────────────
+  intl: ^0.19.0               # Định dạng ngày giờ tiếng Việt
+  uuid: ^4.5.1                # Tạo UUID unique cho session
+  logger: ^2.4.0              # Logging có màu sắc, level filter
+  collection: ^1.18.0         # Dart collection utils
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0       # Lint rules
+  bloc_test: ^9.1.7           # Testing BLoC
+  mocktail: ^1.0.4            # Mock dependencies khi test
+  build_runner: ^2.4.12       # Code generation (Drift, Freezed)
+  drift_dev: ^2.18.0          # Drift schema generator
+
+flutter:
+  uses-material-design: true
+
+  # ── Assets ─────────────────────────────────────────────────────────────────
+  assets:
+    - assets/models/          # TFLite models
+    - assets/images/          # App images
+    - assets/animations/      # Lottie JSON files
+
+  # ── Fonts ──────────────────────────────────────────────────────────────────
+  fonts:
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/Inter-Regular.ttf
+        - asset: assets/fonts/Inter-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Inter-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Inter-Bold.ttf
+          weight: 700

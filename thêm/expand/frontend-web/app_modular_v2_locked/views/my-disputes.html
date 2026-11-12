@@ -1,0 +1,18 @@
+  <div class="view" id="view-my-disputes">
+    <div class="section-hdr">
+      <div>
+        <div class="section-title">⚖️ Khiếu Nại Nề Nếp & Điểm Danh</div>
+        <p style="color:var(--muted);font-size:0.85rem;margin:4px 0 0 0;">Phản hồi về nhận diện muộn hoặc lỗi đồng phục gửi tới GVCN & Giám Thị</p>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button class="btn btn-primary" onclick="openCreateDisputeModal()">+ Gửi Khiếu Nại Mới</button>
+        <button class="btn btn-outline" onclick="loadMyDisputes()">🔄 Làm Mới</button>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Học Sinh</th><th>Lý Do Khiếu Nại</th><th>Cấp Xử Lý</th><th>Trạng Thái</th><th>Ngày Gửi</th><th>Ghi Chú Giải Quyết</th></tr></thead>
+        <tbody id="myDisputesBody"><tr><td colspan="6" style="text-align:center;padding:32px;color:var(--muted);">Đang tải...</td></tr></tbody>
+      </table>
+    </div>
+  </div>

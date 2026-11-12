@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quản Lý Nông Trại Thông Minh</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+
+    <div id="auth-screen" class="container-center">
+        <div id="login-form" class="login-card">
+            <h2>🌱 Đăng Nhập</h2>
+            <div class="form-group">
+                <label>Email</label>
+                <input type="email" id="login-email">
+            </div>
+            <div class="form-group">
+                <label>Mật khẩu</label>
+                <input type="password" id="login-password">
+            </div>
+            <button onclick="handleLogin()" class="btn-primary">Vào Nông Trại</button>
+            <p class="switch-text">Chưa có tài khoản? <a href="#" onclick="toggleAuth('register')">Đăng ký ngay</a></p>
+            <p id="login-msg" class="error-text"></p>
+        </div>
+
+        <div id="register-form" class="login-card hidden">
+            <h2>📝 Đăng Ký Mới</h2>
+            <div class="form-group">
+                <label>Email</label>
+                <input type="email" id="reg-email">
+            </div>
+            <div class="form-group">
+                <label>Mật khẩu</label>
+                <input type="password" id="reg-password">
+            </div>
+            <button onclick="handleRegister()" class="btn-primary">Tạo Tài Khoản</button>
+            <p class="switch-text">Đã có tài khoản? <a href="#" onclick="toggleAuth('login')">Đăng nhập</a></p>
+            <p id="reg-msg" class="error-text"></p>
+        </div>
+    </div>
+
+    <div id="dashboard-screen" class="hidden">
+        
+        <header class="top-bar">
+            <div class="user-info">
+                <h1>🏡 Nông Trại Của Tôi</h1>
+                <span id="user-email">...</span>
+                
+                <div class="mode-switch" style="margin-left: 20px; display:inline-flex; background:#eee; padding:5px; border-radius:20px;">
+                    <button id="btn-mode-livestock" onclick="switchMode('livestock')" class="btn-mode active">🐖 Chăn nuôi</button>
+                    <button id="btn-mode-cultivation" onclick="switchMode('cultivation')" class="btn-mode">🌿 Trồng trọt</button>
+                </div>
+
+                <button onclick="enableNotifications()" class="btn-small" style="background:#ff9800; margin-left:10px;">🔔 Bật Thông Báo</button>
+                
+                <button onclick="window.open('frontend.html', 'AIAssistant', 'width=700,height=800,left=200,top=100')" class="btn-small" style="background:#8e44ad; color:white; border:none; margin-left:10px; font-weight:bold; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">🤖 Hỏi Chuyên Gia AI</button>
+                
+            </div>
+            <button onclick="handleLogout()" class="btn-outline">Đăng Xuất</button>
+        </header>
+
+        <div class="filter-section">
+            <div style="display:flex; gap:10px; align-items:center;">
+                <label>Khu vực:</label>
+                <select id="pen-select" onchange="changePen()"></select>
+                <button onclick="openModal('modal-pen')" class="btn-small">+ Thêm Chuồng</button>
+            </div>
+        </div>
+
+        <div class="main-grid">
+            
+            <div class="card">
+                <h3>📡 Môi Trường</h3>
+                <div class="sensor-container">
+                    <div class="sensor-box temp"><span class="value" id="temp">--</span><span class="unit">°C</span></div>
+                    <div class="sensor-box hum"><span class="value" id="hum">--</span><span class="unit">%</span></div>
+                    <div class="sensor-box smell"><span class="value" id="smell">--</span><span class="unit">ppm</span></div>
+                </div>
+                <div class="chart-container"><canvas id="envChart"></canvas></div>
+            </div>
+            <div class="card">
+                <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #eee; padding-bottom:10px; margin-bottom:10px;">
+                    <h3 style="border:none; margin:0; padding:0; color:#F57C00;">📦 Kho Vật Tư</h3>
+                    <div style="display:flex; gap:5px;">
+                        <button onclick="openImportModal()" class="btn-small" style="background:#2E7D32;">+ Nhập</button>
+                        <button onclick="openExportModal()" class="btn-small" style="background:#F57C00;">- Xuất</button>
+                    </div>
+                </div>
+                
+                <div style="display:flex; gap:5px; margin-bottom: 10px;">
+                    <input type="text" id="inv-search" oninput="filterInventory()" placeholder="🔍 Tìm tên hàng..." 
+                           style="flex:2; padding:6px; font-size:13px;">
+                    
+                    <select id="inv-filter-cat" onchange="filterInventory()" 
+                            style="flex:1; padding:6px; font-size:13px;">
+                        <option value="All">Tất cả</option>
+                        <option value="Feed">Thức ăn</option>
+                        <option value="Fertilizer">Phân bón</option>
+                        <option value="Other">Khác</option>
+                    </select>
+                </div>
+                
+                <div id="inventory-list" style="max-height: 250px; overflow-y: auto;">
+                    <p style="text-align:center; color:#888;">Đang tải dữ liệu kho...</p>
+                </div>
+            </div>
+            <div class="card">
+                <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #eee; padding-bottom:10px; margin-bottom:15px;">
+                    <h3 style="border:none; margin:0; padding:0;">🎮 Thiết Bị</h3>
+                    <button onclick="openModal('modal-device')" class="btn-small">+ Thêm</button>
+                </div>
+                <div id="device-list" class="device-grid">
+                    <p>Đang tải...</p>
+                </div>
+            </div>
+
+            <div class="card full-width">
+                <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #eee; padding-bottom:10px; margin-bottom:15px;">
+                    <h3 id="main-title" style="border:none; margin:0; padding:0;">🐖 Đàn Nuôi</h3>
+                    <button id="main-add-btn" onclick="openModal('modal-animal')" class="btn-small">+ Thêm Con Vật</button>
+                </div>
+                
+                <div class="table-responsive">
+                    <div id="livestock-view">
+                        <table id="animal-table">
+                            <thead>
+                                <tr><th>Mã</th><th>Loài</th><th>Cân nặng</th><th>Trạng thái</th><th>Xóa</th></tr>
+                            </thead>
+                            <tbody id="animal-list"></tbody>
+                        </table>
+                    </div>
+
+                    <div id="cultivation-view" class="hidden">
+                        <div id="crop-list" class="device-grid">
+                            </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-pen" class="modal hidden">
+        <div class="modal-content">
+            <h3>Thêm Khu Vực Mới</h3>
+            
+            <label>Loại khu vực:</label>
+            <select id="new-pen-type" style="margin-bottom:10px;">
+                <option value="livestock">🐖 Chuồng Trại</option>
+                <option value="cultivation">🌿 Vườn Trồng</option>
+            </select>
+
+            <input type="text" id="new-pen-id" placeholder="Mã (VD: VUON_01)">
+            <input type="text" id="new-pen-name" placeholder="Tên (VD: Vườn Cà Chua)">
+            
+            <div class="modal-actions">
+                <button onclick="closeModal('modal-pen')" class="btn-outline">Hủy</button>
+                <button onclick="addPen()" class="btn-primary">Lưu</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-device" class="modal hidden">
+        <div class="modal-content">
+            <h3>Thêm Thiết Bị IoT</h3>
+            <input type="text" id="new-dev-id" placeholder="Mã (VD: QUAT_01)">
+            <input type="text" id="new-dev-name" placeholder="Tên (VD: Quạt Thông Gió)">
+            <input type="number" id="new-dev-pin" placeholder="Chân GPIO (VD: 5)">
+            <div class="modal-actions">
+                <button onclick="closeModal('modal-device')" class="btn-outline">Hủy</button>
+                <button onclick="addDevice()" class="btn-primary">Lưu</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-animal" class="modal hidden">
+        <div class="modal-content">
+            <h3>Nhập Hồ Sơ Vật Nuôi</h3>
+            <input type="text" id="new-ani-id" placeholder="Mã (VD: HEO_05)">
+            <select id="new-ani-species">
+                <option value="Heo">Heo (Lợn)</option>
+                <option value="Gà">Gà</option>
+                <option value="Bò">Bò</option>
+            </select>
+            <input type="number" id="new-ani-weight" placeholder="Cân nặng hiện tại (kg)">
+            <input type="number" id="new-ani-target" placeholder="Cân nặng tiêu chuẩn (kg)">
+            <div class="modal-actions">
+                <button onclick="closeModal('modal-animal')" class="btn-outline">Hủy</button>
+                <button onclick="addAnimal()" class="btn-primary">Lưu</button>
+            </div>
+        </div>
+    </div>
+    <div id="modal-health" class="modal hidden">
+        <div class="modal-content" style="width: 500px; max-width: 90%;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; border-bottom:1px solid #eee; padding-bottom:10px;">
+                <h3 id="health-title" style="margin:0; color:#d32f2f;">🏥 Hồ Sơ Sức Khỏe</h3>
+                <button onclick="closeModal('modal-health')" style="border:none; background:none; font-size:1.5rem; cursor:pointer;">&times;</button>
+            </div>
+
+            <div style="background: #fff3e0; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #ffe0b2;">
+                <label style="font-weight:bold; display:block; margin-bottom:8px;">Thêm ghi chép mới:</label>
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:10px;">
+                    <select id="health-type">
+                        <option value="Vaccine">💉 Tiêm Vắc-xin</option>
+                        <option value="Treatment">💊 Điều trị/Thuốc</option>
+                        <option value="Sick">🚑 Phát hiện bệnh</option>
+                    </select>
+                    <input type="text" id="health-action" placeholder="Tên thuốc/bệnh (VD: Tụ huyết trùng)">
+                </div>
+                <input type="text" id="health-note" placeholder="Ghi chú (VD: Sốt cao, đã tiêm liều 1...)" style="width:100%; margin-bottom:10px;">
+                <button onclick="addHealthLog()" class="btn-primary" style="background:#e65100; width:100%;">Lưu Hồ Sơ</button>
+            </div>
+            
+            <div style="max-height: 300px; overflow-y: auto;">
+                <table style="width:100%; font-size:14px;">
+                    <thead>
+                        <tr style="background:#f5f5f5;">
+                            <th style="padding:8px;">Ngày</th>
+                            <th style="padding:8px;">Loại</th>
+                            <th style="padding:8px;">Nội dung</th>
+                            <th style="padding:8px;">Xóa</th>
+                        </tr>
+                    </thead>
+                    <tbody id="health-list">
+                        </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <div id="modal-tracking" class="modal hidden">
+        <div class="modal-content" style="width: 500px; max-width: 90%;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; border-bottom:1px solid #eee; padding-bottom:10px;">
+                <h3 id="track-title" style="margin:0; color:#2E7D32;">📈 Theo Dõi Tăng Trưởng</h3>
+                <button onclick="closeModal('modal-tracking')" style="border:none; background:none; font-size:1.5rem; cursor:pointer;">&times;</button>
+            </div>
+            
+            <div style="height: 250px; margin-bottom: 20px;">
+                <canvas id="weightChart"></canvas>
+            </div>
+
+           <div style="background: #E8F5E9; padding: 20px; border-radius: 12px; border: 1px solid #C8E6C9; margin-top: 15px;">
+                <label style="font-weight:bold; display:block; margin-bottom:10px; color:#1B5E20; font-size: 16px;">
+                    ⚖️ Cập nhật cân nặng mới (Kg):
+                </label>
+                
+                <div class="input-group-lg">
+                    <input type="number" id="new-log-weight" class="input-lg" placeholder="VD: 25.5" step="0.1">
+                    
+                    <button onclick="saveNewWeight()" class="btn-lg">
+                        💾 CẬP NHẬT
+                    </button>
+                </div>
+                
+                <p style="color:#555; margin-top:10px; font-size:13px; font-style:italic;">
+                    * Nhập số lẻ dùng dấu chấm (VD: 10.5)
+                </p>
+            </div>
+        </div>
+    </div>
+    <div id="modal-import" class="modal hidden">
+        <div class="modal-content">
+            <h3>📥 Nhập Kho Vật Tư</h3>
+            
+            <label>Loại hàng:</label>
+            <select id="imp-category">
+                <option value="Feed">🥩 Thức ăn chăn nuôi</option>
+                <option value="Fertilizer">🌱 Phân bón / Thuốc</option>
+                <option value="Other">🛠️ Dụng cụ khác</option>
+            </select>
+
+            <input type="text" id="imp-name" placeholder="Tên hàng (VD: Cám Cò, Phân Ure)">
+            
+            <div style="display:flex; gap:10px;">
+                <input type="number" id="imp-qty" placeholder="Số lượng" style="flex:1;">
+                <input type="text" id="imp-unit" placeholder="Đơn vị (kg, lít)" style="width:80px;">
+            </div>
+            
+            <input type="number" id="imp-price" placeholder="Giá nhập (VNĐ)">
+
+            <div class="modal-actions">
+                <button onclick="closeModal('modal-import')" class="btn-outline">Hủy</button>
+                <button onclick="processImport()" class="btn-primary">Lưu Kho</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-export" class="modal hidden">
+        <div class="modal-content">
+            <h3>📤 Xuất Dùng Vật Tư</h3>
+            
+            <label>Chọn hàng trong kho:</label>
+            <select id="exp-select" onchange="checkExportType()"></select>
+            
+            <label style="margin-top:10px; display:block;">Số lượng dùng:</label>
+            <input type="number" id="exp-qty" placeholder="VD: 10">
+
+            <div id="exp-pen-div" class="hidden">
+                <label>Cho chuồng nào ăn?</label>
+                <select id="exp-pen-select"></select>
+            </div>
+
+            <label>Ghi chú / Mục đích:</label>
+            <input type="text" id="exp-note" placeholder="VD: Bón ruộng ngô, Cho ăn sáng...">
+
+            <div class="modal-actions">
+                <button onclick="closeModal('modal-export')" class="btn-outline">Hủy</button>
+                <button onclick="processExport()" class="btn-primary" style="background:#F57C00;">Xác Nhận</button>
+            </div>
+        </div>
+    </div>
+    <div id="modal-crop" class="modal hidden">
+        <div class="modal-content">
+            <h3>🌱 Thêm Cây Trồng</h3>
+            <input type="text" id="crop-name" placeholder="Tên cây (VD: Dưa lưới)">
+            <input type="number" id="crop-qty" placeholder="Số lượng gốc">
+            
+            <label style="display:block; margin-top:5px;">Ngày trồng:</label>
+            <input type="date" id="crop-date">
+            
+            <div class="modal-actions">
+                <button onclick="closeModal('modal-crop')" class="btn-outline">Hủy</button>
+                <button onclick="addCrop()" class="btn-primary" style="background:#4CAF50;">Gieo Trồng</button>
+            </div>
+        </div>
+    </div>
+    <div id="modal-crop-tracking" class="modal hidden">
+        <div class="modal-content" style="width: 500px; max-width: 90%;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <h3 id="crop-track-title">📈 Phát Triển Cây</h3>
+                <button onclick="closeModal('modal-crop-tracking')" style="border:none; background:none; font-size:1.5rem;">&times;</button>
+            </div>
+            <div style="height: 250px; margin: 20px 0;"><canvas id="cropChart"></canvas></div>
+            
+            <div style="background: #F1F8E9; padding: 15px; border-radius: 8px;">
+                <label>📏 Cập nhật kích thước/chiều cao (cm):</label>
+                <div class="input-group-lg">
+                    <input type="number" id="new-crop-size" class="input-lg" placeholder="VD: 50">
+                    <button onclick="saveCropGrowth()" class="btn-lg" style="background:#4CAF50;">LƯU</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-crop-care" class="modal hidden">
+        <div class="modal-content" style="width: 500px; max-width: 90%;">
+            <h3>💦 Nhật Ký Chăm Sóc</h3>
+            <div style="background: #E0F2F1; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                <label>Hoạt động:</label>
+                <div style="display:flex; gap:10px; margin-bottom:10px;">
+                    <select id="care-type">
+                        <option value="Water">💧 Tưới nước</option>
+                        <option value="Fertilizer">🧪 Bón phân</option>
+                        <option value="Pesticide">⚠️ Phun thuốc</option>
+                        <option value="Prune">✂️ Tỉa cành</option>
+                    </select>
+                    <input type="text" id="care-note" placeholder="Ghi chú (VD: Phân NPK)">
+                </div>
+                <button onclick="addCropCareLog()" class="btn-primary" style="background:#009688;">Ghi Nhật Ký</button>
+            </div>
+            
+            <div style="max-height: 250px; overflow-y: auto;">
+                <table style="width:100%">
+                    <tbody id="crop-care-list"></tbody>
+                </table>
+            </div>
+            <button onclick="closeModal('modal-crop-care')" class="btn-outline" style="margin-top:10px; width:100%;">Đóng</button>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>

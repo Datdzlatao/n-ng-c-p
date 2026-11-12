@@ -1,0 +1,18 @@
+  <div class="view" id="view-verify">
+    <div class="section-hdr">
+      <div>
+        <div class="section-title">🛡️ Duyệt Xác Minh Danh Tính & FaceID</div>
+        <div style="font-size:0.78rem;color:var(--muted);margin-top:2px;">Xét duyệt CCCD, Thẻ học sinh & Quét khuôn mặt 3D cấp Tích Xanh chính chủ</div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-primary" style="background:var(--purple);" onclick="openDirectFaceScanModal()">📸 Quét Mặt Xác Minh</button>
+        <button class="btn btn-outline" onclick="loadPendingVerify()">🔄 Tải Lại</button>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Họ Tên</th><th>Username</th><th>Vai Trò</th><th>SĐT</th><th>Phương Thức</th><th>Hồ Sơ / Khuôn Mặt</th><th>Thao Tác</th></tr></thead>
+        <tbody id="verifyBody"></tbody>
+      </table>
+    </div>
+  </div>

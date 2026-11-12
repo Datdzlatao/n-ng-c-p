@@ -1,0 +1,88 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: stem_postgres
+    restart: always
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-stem_platform}
+      POSTGRES_USER: ${POSTGRES_USER:-stem_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-StemDbPass@2026!}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stem_user -d stem_platform"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - stem_net
+
+  redis:
+    image: redis:7-alpine
+    container_name: stem_redis
+    restart: always
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - stem_net
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: stem_backend
+    restart: always
+    environment:
+      - DEBUG=${DEBUG:-false}
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET environment variable is required}
+      - CORS_ORIGINS=${CORS_ORIGINS:-https://stemapp.vn}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - DATABASE_URL=${DATABASE_URL:-postgresql+asyncpg://stem_user:StemDbPass@2026!@postgres:5432/stem_platform}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    volumes:
+      - ./backend/data:/app/data
+      - ./backend/uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - stem_net
+
+  nginx:
+    image: nginx:alpine
+    container_name: stem_nginx
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./frontend-web/dist:/usr/share/nginx/html:ro
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - stem_net
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  stem_net:
+    driver: bridge

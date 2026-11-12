@@ -1,0 +1,22 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+#  REQUIREMENTS.TXT — STANDALONE AI VISION ENGINE (Face Recognition & Uniform)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Cốt lõi: Xử lý ảnh & Thị giác máy tính (YuNet, SFace, HOG, HSV)
+opencv-python>=4.8.0
+numpy>=1.24.0
+Pillow>=10.0.0
+
+# Tùy chọn 1: Microservice REST API (nếu muốn gọi qua HTTP REST)
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+python-multipart>=0.0.9
+pydantic>=2.0.0
+
+# Tùy chọn 2: Deep Learning nâng cao cho Trang phục Dân tộc (Thứ 2)
+# Chỉ cần cài nếu muốn chạy model TFLite cho trang phục dân tộc:
+# tflite-runtime>=2.13.0   # Dành cho Raspberry Pi / CPU yếu
+# tensorflow>=2.13.0       # Dành cho PC / Laptop
+
+# Tùy chọn 3: YOLOv8-Pose Estimator (Cắt vùng áo/quần theo 17 khớp xương)
+# ultralytics>=8.0.0
