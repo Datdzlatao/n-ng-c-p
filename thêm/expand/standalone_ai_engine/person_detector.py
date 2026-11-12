@@ -54,23 +54,28 @@ def non_max_suppression_fast(boxes: np.ndarray, overlap_thresh: float) -> list:
 
 class PersonDetector:
     def __init__(self, use_face_fallback: bool = True):
-        self.hog = cv2.HOGDescriptor()
-        self.hog.setSVMDetector(cv2.HOGDescriptor_getDefaultPeopleDetector())
         self.use_face_fallback = use_face_fallback
+        if hasattr(cv2, "HOGDescriptor") and hasattr(cv2, "HOGDescriptor_getDefaultPeopleDetector"):
+            self.hog = cv2.HOGDescriptor()
+            self.hog.setSVMDetector(cv2.HOGDescriptor_getDefaultPeopleDetector())
+        else:
+            self.hog = None
 
     def detect(self, frame: np.ndarray, face_locations: Optional[List[Tuple[int, int, int, int]]] = None) -> List[Dict]:
         h, w = frame.shape[:2]
-        small = cv2.resize(frame, (0, 0), fx=DETECT_SCALE, fy=DETECT_SCALE)
-        gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+        boxes_raw = []
 
-        boxes_raw, weights = self.hog.detectMultiScale(
-            gray,
-            winStride=HOG_WIN_STRIDE,
-            padding=HOG_PADDING,
-            scale=HOG_SCALE,
-            finalThreshold=HOG_FINAL_THRESH,
-            useMeanshiftGrouping=False
-        )
+        if self.hog is not None:
+            small = cv2.resize(frame, (0, 0), fx=DETECT_SCALE, fy=DETECT_SCALE)
+            gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+            boxes_raw, weights = self.hog.detectMultiScale(
+                gray,
+                winStride=HOG_WIN_STRIDE,
+                padding=HOG_PADDING,
+                scale=HOG_SCALE,
+                finalThreshold=HOG_FINAL_THRESH,
+                useMeanshiftGrouping=False
+            )
 
         detections = []
         if len(boxes_raw) > 0:

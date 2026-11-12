@@ -81,20 +81,28 @@ python api_server.py
 ```
 
 ### Các Endpoint chính:
-1. **Kiểm tra trạng thái:** `GET http://localhost:8001/api/v1/health`
-2. **Lấy danh sách khuôn mặt:** `GET http://localhost:8001/api/v1/faces`
-3. **Phân tích ảnh qua File:**
+1. **Giao diện Web xem camera trực tiếp (Dashboard Viewer):**
+   - Truy cập ngay trên trình duyệt: `http://localhost:8001/` hoặc `http://localhost:8001/viewer`
+   - Xem video mượt mà thời gian thực, bảng nhận diện học sinh, liveness và kiểm tra đồng phục.
+2. **Luồng Video MJPEG Online (API soi cam trực tiếp):**
+   - URL: `GET http://localhost:8001/api/v1/camera/video_feed`
+   - Có thể nhúng trực tiếp vào bất kỳ trang web nào: `<img src="http://localhost:8001/api/v1/camera/video_feed">`
+   - Tham số: `?overlay=true` (có vẽ khung AI) hoặc `?overlay=false` (video camera gốc).
+3. **Lấy dữ liệu Telemetry / Sự kiện AI mới nhất:**
+   - `GET http://localhost:8001/api/v1/camera/latest` (trả về JSON học sinh, liveness, đồng phục, FPS).
+4. **Điều khiển bật/tắt camera từ xa:**
+   - Bật camera: `POST http://localhost:8001/api/v1/camera/start` kèm body `{"source": 0}` hoặc link RTSP.
+   - Dừng camera: `POST http://localhost:8001/api/v1/camera/stop`
+5. **Chụp ảnh tức thời (Snapshot):**
+   - `GET http://localhost:8001/api/v1/camera/snapshot` (trả về ảnh JPEG).
+6. **Kiểm tra trạng thái & nạp lại khuôn mặt:**
+   - `GET http://localhost:8001/api/v1/health`
+   - `POST http://localhost:8001/api/v1/faces/reload`
+7. **Phân tích ảnh qua File hoặc Base64:**
    ```bash
-   curl -X POST "http://localhost:8001/api/v1/analyze-upload" \
-        -F "file=@anh_hoc_sinh.jpg"
+   curl -X POST "http://localhost:8001/api/v1/analyze-upload" -F "file=@anh_hoc_sinh.jpg"
    ```
-4. **Phân tích ảnh qua chuỗi Base64:**
-   ```bash
-   curl -X POST "http://localhost:8001/api/v1/analyze" \
-        -H "Content-Type: application/json" \
-        -d '{"image_base64": "data:image/jpeg;base64,/9j/4AAQSkZJRg..."}'
-   ```
-5. **Đăng ký FaceID mới qua API:**
+8. **Đăng ký FaceID mới qua API:**
    ```bash
    curl -X POST "http://localhost:8001/api/v1/faces/enroll" \
         -F "student_id=HS99" \

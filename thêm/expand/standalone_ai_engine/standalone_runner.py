@@ -47,11 +47,11 @@ except ImportError:
 
 
 class StandaloneVisionPipeline:
-    def __init__(self, faces_dir: str = "known_faces", enable_anti_spoof: bool = True):
+    def __init__(self, faces_dir: str = "known_faces", enable_anti_spoof: bool = True, force_reload: bool = False):
         print("=" * 60)
         print("  STANDALONE AI VISION PIPELINE (Face + Spoof + Uniform)")
         print("=" * 60)
-        self.face_engine = FaceEngine(faces_dir=faces_dir)
+        self.face_engine = FaceEngine(faces_dir=faces_dir, force_reload=force_reload)
         self.anti_spoof = AntiSpoofingDetector() if enable_anti_spoof else None
         self.uniform_checker = UniformChecker(use_person_detector=True)
         print("[PIPELINE] Khởi tạo các module AI thành công.")
@@ -133,7 +133,10 @@ class StandaloneVisionPipeline:
         cv2.rectangle(overlay, (0, h - bar_h), (w, h), (20, 20, 20), -1)
         cv2.addWeighted(overlay, 0.75, canvas, 0.25, 0, canvas)
 
-        status_text = f"AI Vision | {result['process_time_ms']}ms | Faces: {result['faces_detected']} | Quy dinh: {uni.get('rule', '')}"
+        rule_str = uni.get("rule", "") if uni else ""
+        ms_str = result.get("process_time_ms", 0)
+        faces_n = result.get("faces_detected", 0)
+        status_text = f"AI Vision | {ms_str}ms | Faces: {faces_n} | Quy dinh: {rule_str}"
         cv2.putText(canvas, status_text, (15, h - 16),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.48, (220, 230, 240), 1, cv2.LINE_AA)
         return canvas
@@ -145,11 +148,12 @@ def main():
     parser.add_argument("--image", type=str, default="", help="Path to static image for testing")
     parser.add_argument("--register", nargs=2, metavar=("ID", "NAME"), help="Register new face: --register HS01 'Nguyen Van A' --image face.jpg")
     parser.add_argument("--weekday", type=int, default=None, help="Override weekday (0=Mon, 1=Tue, ... 6=Sun)")
+    parser.add_argument("--reload-faces", action="store_true", help="Quét lại toàn bộ ảnh trong known_faces và cập nhật cache")
     parser.add_argument("--no-gui", action="store_true", help="Run in headless mode without cv2.imshow")
     parser.add_argument("--port", type=int, default=0, help="Start MJPEG streaming server on specified port (e.g. 8080)")
     args = parser.parse_args()
 
-    pipeline = StandaloneVisionPipeline()
+    pipeline = StandaloneVisionPipeline(force_reload=args.reload_faces)
 
     # Mode 1: Register Face
     if args.register:

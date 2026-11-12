@@ -65,7 +65,8 @@ class FaceEngine:
                  nms_threshold: float = 0.30,
                  cosine_threshold: float = 0.42,
                  margin_threshold: float = 0.08,
-                 min_face_size: int = 40):
+                 min_face_size: int = 40,
+                 force_reload: bool = False):
 
         self.faces_dir = faces_dir
         self.models_dir = models_dir
@@ -110,7 +111,7 @@ class FaceEngine:
         self.known_ids: List[str] = []
         self.known_names: List[str] = []
 
-        self.load_known_faces()
+        self.load_known_faces(force_reload=force_reload)
 
     def _update_detector_size(self, w: int, h: int):
         if (w, h) != self.current_input_size:
@@ -135,32 +136,73 @@ class FaceEngine:
             feature = feature / norm
         return feature.flatten()
 
+    @staticmethod
+    def parse_filename(fname: str) -> Tuple[str, str]:
+        """Tách MSSV/ID và Tên từ tên file, loại bỏ đuôi file trùng lặp và hậu tố tư thế ảnh."""
+        name = fname.strip()
+        while True:
+            root, ext = os.path.splitext(name)
+            if ext.lower() in {".jpg", ".jpeg", ".png", ".webp", ".bmp"} or ext.strip().lower() in {".jpg", ".jpeg", ".png", ".webp"}:
+                name = root.strip()
+            else:
+                break
+
+        parts = name.split("_")
+        if len(parts) == 1:
+            return parts[0].strip(), parts[0].strip()
+
+        stu_id = parts[0].strip()
+        tokens = parts[1:]
+
+        pose_keywords = {
+            "camera", "thang", "nghieng", "phai", "trai", "chinhdien", "chinh_dien",
+            "mattruoc", "mat_truoc", "front", "left", "right", "center", "face", "avatar"
+        }
+        while len(tokens) > 1 and (tokens[-1].lower() in pose_keywords or tokens[-1].isdigit() or tokens[-1].lower() in {"nghieng_phai", "nghieng_trai"}):
+            tokens.pop()
+        if len(tokens) >= 2 and tokens[-2].lower() == "nghieng" and tokens[-1].lower() in {"trai", "phai"}:
+            tokens.pop()
+            tokens.pop()
+
+        stu_name = " ".join(tokens).strip()
+        return stu_id, stu_name if stu_name else stu_id
+
     def load_known_faces(self, force_reload: bool = False):
+        valid_exts = {".jpg", ".jpeg", ".png", ".webp"}
+        files = [f for f in os.listdir(self.faces_dir) if any(f.strip().lower().endswith(ext) for ext in valid_exts)]
+        files = sorted(files)
+
+        # Kiểm tra xem cache hiện tại có hợp lệ và khớp danh sách file không
         if not force_reload and os.path.isfile(self.cache_path):
             try:
                 data = np.load(self.cache_path, allow_pickle=True)
-                self.known_ids = list(data["ids"])
-                self.known_names = list(data["names"])
-                self.known_embeddings = list(data["embeddings"])
-                print(f"[FACE ENGINE] Đã nạp {len(self.known_ids)} khuôn mặt từ cache: {os.path.basename(self.cache_path)}")
-                return
+                cached_files = list(data["files"]) if "files" in data else None
+                if cached_files is not None and sorted(cached_files) == files:
+                    self.known_ids = list(data["ids"])
+                    self.known_names = list(data["names"])
+                    self.known_embeddings = list(data["embeddings"])
+                    print(f"[FACE ENGINE] Đã nạp {len(self.known_ids)} khuôn mặt từ cache: {os.path.basename(self.cache_path)}")
+                    return
+                elif cached_files is None and len(data["ids"]) == len(files):
+                    self.known_ids = list(data["ids"])
+                    self.known_names = list(data["names"])
+                    self.known_embeddings = list(data["embeddings"])
+                    print(f"[FACE ENGINE] Đã nạp {len(self.known_ids)} khuôn mặt từ cache: {os.path.basename(self.cache_path)}")
+                    return
+                else:
+                    print(f"[FACE ENGINE] Thư mục ảnh đã thay đổi ({len(files)} ảnh hiện tại), cập nhật lại cache...")
             except Exception as e:
                 print(f"[FACE ENGINE] Cache không đọc được ({e}), quét lại thư mục...")
 
         self.known_ids.clear()
         self.known_names.clear()
         self.known_embeddings.clear()
+        loaded_files = []
 
-        valid_exts = {".jpg", ".jpeg", ".png", ".webp"}
-        files = [f for f in os.listdir(self.faces_dir) if os.path.splitext(f)[1].lower() in valid_exts]
         print(f"[FACE ENGINE] Đang quét {len(files)} ảnh trong {self.faces_dir}...")
 
-        for fname in sorted(files):
-            stem = os.path.splitext(fname)[0]
-            # Convention: "HS01_Nguyen_Van_A.jpg" or "HS01.jpg"
-            parts = stem.split("_", 1)
-            stu_id = parts[0].strip()
-            stu_name = parts[1].replace("_", " ").strip() if len(parts) > 1 else stu_id
+        for fname in files:
+            stu_id, stu_name = self.parse_filename(fname)
 
             img_path = os.path.join(self.faces_dir, fname)
             img = cv2.imread(img_path)
@@ -172,6 +214,7 @@ class FaceEngine:
                 self.known_ids.append(stu_id)
                 self.known_names.append(stu_name)
                 self.known_embeddings.append(emb)
+                loaded_files.append(fname)
 
         if self.known_ids:
             try:
@@ -180,7 +223,8 @@ class FaceEngine:
                     self.cache_path,
                     ids=np.array(self.known_ids),
                     names=np.array(self.known_names),
-                    embeddings=np.array(self.known_embeddings)
+                    embeddings=np.array(self.known_embeddings),
+                    files=np.array(loaded_files)
                 )
                 print(f"[FACE ENGINE] Đã lưu cache {len(self.known_ids)} đặc trưng vào {self.cache_path}")
             except Exception as e:
@@ -276,10 +320,20 @@ class FaceEngine:
                 sorted_indices = np.argsort(sims)[::-1]
                 top1_idx = sorted_indices[0]
                 top1_sim = float(sims[top1_idx])
-                top2_sim = float(sims[sorted_indices[1]]) if len(sorted_indices) > 1 else 0.0
+                top1_id = self.known_ids[top1_idx]
 
-                if top1_sim >= self.cosine_threshold and (top1_sim - top2_sim >= self.margin_threshold or len(sorted_indices) == 1):
-                    best_id = self.known_ids[top1_idx]
+                # Tìm độ tương đồng cao nhất của một NGƯỜI KHÁC (khác student_id)
+                top2_sim = 0.0
+                has_other_identity = False
+                for idx in sorted_indices[1:]:
+                    if self.known_ids[idx] != top1_id:
+                        top2_sim = float(sims[idx])
+                        has_other_identity = True
+                        break
+
+                # Đạt ngưỡng cosine_threshold và (không có người khác trong DB hoặc vượt qua khoảng cách margin_threshold)
+                if top1_sim >= self.cosine_threshold and (not has_other_identity or (top1_sim - top2_sim >= self.margin_threshold)):
+                    best_id = top1_id
                     best_name = self.known_names[top1_idx]
                     best_sim = top1_sim
                     status = "ok"
