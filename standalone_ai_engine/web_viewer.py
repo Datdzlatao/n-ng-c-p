@@ -265,8 +265,9 @@ VIEWER_HTML = """<!DOCTYPE html>
                     <input type="text" id="cameraSource" value="0" placeholder="0 (Webcam) hoặc rtsp://...">
                 </div>
                 <div class="form-row">
-                    <label>Quy định ngày (Thứ):</label>
+                    <label>Chế độ chấm công:</label>
                     <select id="weekdaySelect" onchange="updateWeekday()">
+                        <option value="-1" selected>🟢 Chấm công 24/7 mọi lúc (Trang trại - Không giới hạn giờ)</option>
                         <option value="">Tự động theo ngày hiện tại</option>
                         <option value="0">Thứ 2 (Trang phục dân tộc)</option>
                         <option value="1">Thứ 3 (Áo trắng + Quần tối)</option>

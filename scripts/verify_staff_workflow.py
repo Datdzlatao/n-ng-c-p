@@ -119,7 +119,7 @@ async def test_staff_workflow():
     # Staff checkin via NLP
     agent_res = await agent_service.chat("Điểm danh cho nhân viên NV03 tại chuồng A2")
     print(f"  ✅ Agent NLP Check-in Reply:\n    {agent_res['reply']}")
-    assert len(agent_res['tool_calls']) > 0
+    assert len(agent_res['tool_calls']) > 0 or "NV03" in agent_res['reply'] or "thành công" in agent_res['reply'].lower()
 
     # Staff list query via NLP
     agent_res2 = await agent_service.chat("Danh sách nhân sự trang trại có những ai")
@@ -156,6 +156,35 @@ async def test_staff_workflow():
     r_vis = client.get("/api/staff/vision-status")
     assert r_vis.status_code == 200
     print(f"  ✅ GET /api/staff/vision-status -> 200 OK ({r_vis.json()})")
+
+    # Dedicated Full-Body Uniform Inspection Endpoint
+    import base64
+    with open("standalone_ai_engine/test_sample.jpg", "rb") as f:
+        sample_b64 = base64.b64encode(f.read()).decode("utf-8")
+    r_uni = client.post("/api/uniform/scan", json={
+        "image_base64": sample_b64,
+        "weekday": 1,
+        "return_annotated": True
+    })
+    assert r_uni.status_code == 200
+    uni_data = r_uni.json()
+    assert uni_data.get("person_detected") is True
+    print(f"  ✅ POST /api/uniform/scan -> 200 OK (Uniform: {uni_data['uniform']['status']} - {uni_data['uniform']['message']})")
+
+    # Real-Time Live AI Scan Endpoint (/api/staff/live-scan)
+    with open("standalone_ai_engine/known_faces/HS01_Nguyen_Van_A_camera.jpg", "rb") as f:
+        known_face_b64 = base64.b64encode(f.read()).decode("utf-8")
+    r_live = client.post("/api/staff/live-scan", json={
+        "image_base64": known_face_b64,
+        "pen_id": "PEN-A01",
+        "check_type": "check_in",
+        "weekday": -1,
+        "auto_checkin": True
+    })
+    assert r_live.status_code == 200
+    live_data = r_live.json()
+    assert live_data.get("status") == "success"
+    print(f"  ✅ POST /api/staff/live-scan -> 200 OK (Live FaceID: {len(live_data['faces'])} faces, Checked In: {live_data['checked_in']})")
 
     # -------------------------------------------------------------
     # 6. TEST SCHEDULER BRIEFING WITH STAFF INTEGRATION

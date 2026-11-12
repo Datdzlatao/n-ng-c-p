@@ -53,9 +53,10 @@ _ATTENDANCE_FALLBACK = [
         "staff_name": "Nguyễn Văn An",
         "pen_id": "123",
         "status": "present",
+        "check_type": "check_in",
         "confidence": 0.96,
         "is_real": True,
-        "note": "Điểm danh ca sáng qua Face AI",
+        "note": "Chấm công ca trực qua Face AI",
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
 ]
@@ -98,8 +99,11 @@ class StaffRepository:
         except Exception as e:
             logger.warning(f"Error getting staff {clean_id}: {e}")
 
+        def _norm(i: str) -> str:
+            return i.upper().replace("NV0", "NV").strip()
+
         for s in _STAFF_FALLBACK:
-            if s.get("id") == clean_id:
+            if s.get("id") == clean_id or _norm(s.get("id", "")) == _norm(clean_id):
                 return s
         return None
 
@@ -145,17 +149,19 @@ class StaffRepository:
         staff_name: str,
         pen_id: Optional[str] = "123",
         status: str = "present",
+        check_type: str = "check_in",
         confidence: float = 1.0,
         is_real: bool = True,
         note: str = "",
     ) -> dict[str, Any]:
-        """Record attendance check-in for a staff member."""
+        """Record attendance check-in/check-out for a staff member at any time 24/7."""
         clean_id = staff_id.strip()
         record = {
             "staff_id": clean_id,
             "staff_name": staff_name.strip(),
             "pen_id": pen_id.strip() if pen_id else "123",
             "status": status,
+            "check_type": check_type,
             "confidence": float(confidence),
             "is_real": bool(is_real),
             "note": note,

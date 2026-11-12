@@ -97,6 +97,79 @@ class FaceVisionService:
             "faces": []
         }
 
+    def inspect_uniform_base64(self, image_base64: str, weekday: int = -1, return_annotated: bool = True) -> dict:
+        """
+        Send base64 image to standalone AI engine for full-body person detection & uniform inspection.
+        """
+        url = f"{self.base_url}/api/v1/uniform/inspect"
+        payload = json.dumps({
+            "image_base64": image_base64,
+            "weekday": weekday,
+            "return_annotated": return_annotated
+        }).encode("utf-8")
+
+        try:
+            req = urllib.request.Request(
+                url,
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                if resp.status == 200:
+                    return json.loads(resp.read().decode("utf-8"))
+        except Exception as e:
+            logger.warning(f"Could not connect to AI Uniform Engine at {url}: {e}")
+
+        # Local fallback if standalone server is offline
+        try:
+            import base64
+            import cv2
+            import numpy as np
+            import sys
+            import os
+            engine_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "standalone_ai_engine")
+            if engine_dir not in sys.path:
+                sys.path.insert(0, engine_dir)
+            from standalone_ai_engine.uniform_checker import UniformChecker
+            from standalone_ai_engine.face_engine import FaceEngine
+
+            raw_b64 = image_base64
+            if "," in raw_b64:
+                raw_b64 = raw_b64.split(",", 1)[1]
+            img_bytes = base64.b64decode(raw_b64)
+            arr = np.frombuffer(img_bytes, dtype=np.uint8)
+            img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+            if img is not None:
+                fe = FaceEngine()
+                faces = fe.recognize(img)
+                floc = faces[0]["location"] if faces else None
+                checker = UniformChecker()
+                res = checker.check_uniform(img, face_location=floc, weekday_override=weekday)
+                annotated_b64 = None
+                if return_annotated:
+                    hud = checker.draw_uniform_hud(img, res)
+                    _, buf = cv2.imencode(".jpg", hud, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                    annotated_b64 = "data:image/jpeg;base64," + base64.b64encode(buf.tobytes()).decode("utf-8")
+                return {
+                    "status": "success",
+                    "mode": "embedded_fallback",
+                    "person_detected": res.get("person_detected", False),
+                    "faces_detected": len(faces),
+                    "faces": faces,
+                    "uniform": res,
+                    "annotated_image_base64": annotated_b64
+                }
+        except Exception as direct_err:
+            logger.debug(f"Direct embedded uniform fallback error: {direct_err}")
+
+        return {
+            "status": "vision_engine_offline",
+            "message": "AI Vision Engine đang offline. Vui lòng chạy start.sh để khởi động cổng 8001.",
+            "person_detected": False,
+            "uniform": None
+        }
+
     def enroll_face(self, staff_id: str, staff_name: str, image_bytes: bytes, filename: str = "avatar.jpg") -> dict:
         """
         Enroll a new staff member face into the known faces database.

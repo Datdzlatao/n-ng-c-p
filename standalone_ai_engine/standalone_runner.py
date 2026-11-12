@@ -47,11 +47,14 @@ except ImportError:
 
 
 class StandaloneVisionPipeline:
-    def __init__(self, faces_dir: str = "known_faces", enable_anti_spoof: bool = True, force_reload: bool = False):
+    def __init__(self, faces_dir: Optional[str] = None, enable_anti_spoof: bool = True, force_reload: bool = False):
         print("=" * 60)
         print("  STANDALONE AI VISION PIPELINE (Face + Spoof + Uniform)")
         print("=" * 60)
-        self.face_engine = FaceEngine(faces_dir=faces_dir, force_reload=force_reload)
+        if faces_dir is not None:
+            self.face_engine = FaceEngine(faces_dir=faces_dir, force_reload=force_reload)
+        else:
+            self.face_engine = FaceEngine(force_reload=force_reload)
         self.anti_spoof = AntiSpoofingDetector() if enable_anti_spoof else None
         self.uniform_checker = UniformChecker(use_person_detector=True)
         print("[PIPELINE] Khởi tạo các module AI thành công.")
@@ -114,18 +117,10 @@ class StandaloneVisionPipeline:
             cv2.putText(canvas, label, (left + 4, max(16, top - 6)),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1, cv2.LINE_AA)
 
-        # 2. Vẽ bounding box đồng phục
+        # 2. Vẽ bounding box đồng phục chi tiết (toàn thân, áo, quần)
         uni = result.get("uniform")
         if uni and uni.get("body_box"):
-            bx, by, bw, bh = uni["body_box"]
-            uni_ok = uni["is_correct"]
-            u_color = (0, 220, 80) if uni_ok else (0, 50, 240)
-            cv2.rectangle(canvas, (bx, by), (bx + bw, by + bh), u_color, 2)
-
-            # Thẻ trạng thái đồng phục góc trên body_box
-            u_tag = f"DONG PHUC: {uni['status']} - {uni['message'][:35]}"
-            cv2.putText(canvas, u_tag, (bx, max(20, by - 8)),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.42, u_color, 1, cv2.LINE_AA)
+            canvas = self.uniform_checker.draw_uniform_hud(canvas, uni)
 
         # 3. Thanh thông tin phía dưới màn hình
         bar_h = 45
@@ -133,10 +128,10 @@ class StandaloneVisionPipeline:
         cv2.rectangle(overlay, (0, h - bar_h), (w, h), (20, 20, 20), -1)
         cv2.addWeighted(overlay, 0.75, canvas, 0.25, 0, canvas)
 
-        rule_str = uni.get("rule", "") if uni else ""
+        rule_str = uni.get("rule", "") if uni else "24/7 Mọi lúc"
         ms_str = result.get("process_time_ms", 0)
         faces_n = result.get("faces_detected", 0)
-        status_text = f"AI Vision | {ms_str}ms | Faces: {faces_n} | Quy dinh: {rule_str}"
+        status_text = f"Smart Farm AI Vision | {ms_str}ms | Faces: {faces_n} | Chấm công 24/7 mọi lúc"
         cv2.putText(canvas, status_text, (15, h - 16),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.48, (220, 230, 240), 1, cv2.LINE_AA)
         return canvas

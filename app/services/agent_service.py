@@ -370,6 +370,16 @@ NHIỆM VỤ CỦA BẠN:
                         "tool": fc.name,
                         "args": dict(fc.args) if fc.args else {},
                     })
+            elif hasattr(response, "automatic_function_calling_history") and response.automatic_function_calling_history:
+                for hist in response.automatic_function_calling_history:
+                    if getattr(hist, "parts", None):
+                        for part in hist.parts:
+                            fc = getattr(part, "function_call", None)
+                            if fc:
+                                executed_tools.append({
+                                    "tool": fc.name,
+                                    "args": dict(fc.args) if fc.args else {},
+                                })
 
             reply_text = response.text if response.text else "Yêu cầu trang trại đã được xử lý thành công."
 

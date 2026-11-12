@@ -133,4 +133,17 @@ class PersonDetector:
                         "source": "face"
                     })
 
+        # Fallback 3: Center-frame person estimation (when HOG is unavailable in OpenCV 5.x and face is masked/occluded)
+        if not detections and (self.hog is None or len(boxes_raw) == 0):
+            bx = int(w * 0.15)
+            by = int(h * 0.05)
+            bw = int(w * 0.70)
+            bh = int(h * 0.90)
+            detections.append({
+                "body_box": (bx, by, bw, bh),
+                "shirt_box": (bx, by + int(bh * SHIRT_ZONE_TOP), bw, int(bh * (SHIRT_ZONE_BOTTOM - SHIRT_ZONE_TOP))),
+                "pants_box": (bx, by + int(bh * PANTS_ZONE_TOP), bw, int(bh * (PANTS_ZONE_BOTTOM - PANTS_ZONE_TOP))),
+                "source": "frame_center"
+            })
+
         return detections

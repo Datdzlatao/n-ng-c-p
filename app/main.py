@@ -1,13 +1,15 @@
 import asyncio
 import json
 import logging
+import time
+import httpx
 from contextlib import asynccontextmanager
 from datetime import date
-from typing import Any, Optional
+from typing import Any, Optional, Dict
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Query, File, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
 from app.config import get_settings
 from app.db.supabase_client import test_supabase_connection
@@ -37,6 +39,8 @@ from app.models.schemas import (
     KnowledgeSearchResponse,
     StaffCreate,
     StaffCheckInRequest,
+    UniformInspectRequest,
+    StaffLiveScanRequest,
 )
 from app.services.agent_service import agent_service
 from app.api.websocket_manager import ws_manager
@@ -534,7 +538,8 @@ async def get_vision_status_api():
 @app.post("/api/staff/checkin", tags=["Staff & Face Attendance"])
 async def checkin_staff_api(payload: StaffCheckInRequest):
     """
-    Điểm danh nhân sự bằng khuôn mặt (FaceID qua Base64 hoặc staff_id).
+    Chấm công nhân sự linh hoạt 24/7 mọi lúc bằng khuôn mặt (FaceID qua Base64 hoặc staff_id).
+    Hỗ trợ Vào ca (check_in), Tan ca (check_out), hoặc Chấm công tức thì (instant).
     Tự động kết nối Standalone AI Engine để trích xuất danh tính và chống giả mạo (liveness).
     """
     try:
@@ -542,8 +547,9 @@ async def checkin_staff_api(payload: StaffCheckInRequest):
         staff_name = "Nhân sự"
         confidence = 1.0
         is_real = True
+        check_type = payload.check_type or "check_in"
 
-        # Nếu có ảnh Base64, gửi tới AI Vision Engine
+        # Nếu có ảnh Base64, gửi tới AI Vision Engine để quét mặt
         if payload.image_base64:
             vision_result = face_service.analyze_face_base64(payload.image_base64)
             faces = vision_result.get("faces", [])
@@ -565,21 +571,26 @@ async def checkin_staff_api(payload: StaffCheckInRequest):
         if staff_info:
             staff_name = staff_info.get("name", staff_name)
 
-        # Lưu bản ghi điểm danh
+        action_label = "Vào ca" if check_type == "check_in" else ("Tan ca" if check_type == "check_out" else "Chấm công")
+        note_text = payload.note or (f"Quét FaceID ({action_label})" if payload.image_base64 else f"Chấm công {action_label} mọi lúc")
+
+        # Lưu bản ghi chấm công (24/7 không giới hạn khung giờ)
         record = staff_repo.log_attendance(
             staff_id=staff_id,
             staff_name=staff_name,
             pen_id=payload.pen_id or (staff_info.get("pen_id") if staff_info else "123"),
-            status="present",
+            status="present" if check_type != "check_out" else "completed",
+            check_type=check_type,
             confidence=confidence,
             is_real=is_real,
-            note=payload.note or ("Điểm danh FaceID" if payload.image_base64 else "Điểm danh thủ công"),
+            note=note_text,
         )
 
         await ws_manager.broadcast("staff_checkin", record)
         return {
             "status": "success",
-            "message": f"Điểm danh thành công cho {staff_name} ({staff_id})",
+            "message": f"Chấm công [{action_label}] thành công cho {staff_name} ({staff_id})",
+            "check_type": check_type,
             "attendance": record,
         }
     except HTTPException:
@@ -592,19 +603,39 @@ async def checkin_staff_api(payload: StaffCheckInRequest):
 @app.post("/api/staff/checkin-upload", tags=["Staff & Face Attendance"])
 async def checkin_upload_api(
     pen_id: str = Form("123"),
+    check_type: str = Form("check_in"),
     file: UploadFile = File(...),
 ):
     """
-    Điểm danh nhân sự bằng ảnh chụp trực tiếp từ webcam/camera tải lên dạng file.
+    Chấm công nhân sự bằng ảnh chụp trực tiếp từ webcam/camera tải lên dạng file.
+    Có thể thực hiện mọi lúc 24/7.
     """
     try:
         import base64
         contents = await file.read()
         b64_str = base64.b64encode(contents).decode("utf-8")
-        req = StaffCheckInRequest(image_base64=b64_str, pen_id=pen_id, note="Điểm danh qua ảnh chụp upload")
+        action_label = "Vào ca" if check_type == "check_in" else ("Tan ca" if check_type == "check_out" else "Chấm công")
+        req = StaffCheckInRequest(
+            image_base64=b64_str, 
+            pen_id=pen_id, 
+            check_type=check_type,
+            note=f"Chấm công qua ảnh tải lên ({action_label})"
+        )
         return await checkin_staff_api(req)
     except Exception as e:
         logger.error(f"Checkin upload error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/staff/attendance/history", tags=["Staff & Face Attendance"])
+async def get_staff_attendance_history_api(
+    staff_id: Optional[str] = Query(None, description="Lọc theo mã nhân viên"),
+    limit: int = Query(30, description="Số lượng bản ghi gần nhất")
+):
+    """Lấy toàn bộ lịch sử chấm công gần nhất (24/7 mọi lúc)."""
+    try:
+        return staff_repo.get_attendance_history(staff_id=staff_id, limit=limit)
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -647,6 +678,228 @@ async def enroll_staff_face_api(
     except Exception as e:
         logger.error(f"Enroll staff face error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/staff/reload-faces", tags=["Staff & Face Attendance"])
+async def reload_staff_faces_api():
+    """Làm mới danh sách FaceID từ thư mục standalone_ai_engine/known_faces."""
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post("http://localhost:8001/api/v1/faces/reload")
+            if resp.status_code == 200:
+                return resp.json()
+            raise HTTPException(resp.status_code, resp.text)
+    except Exception as e:
+        logger.error(f"Reload faces error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ====================================================================
+# DEDICATED FULL-BODY & UNIFORM INSPECTION ENDPOINTS
+# ====================================================================
+
+@app.post("/api/uniform/scan", tags=["Full-Body Uniform Inspection"])
+async def scan_uniform_api(payload: UniformInspectRequest):
+    """
+    API Riêng: Quét toàn thân & phân tích trang phục đồng phục chi tiết (Base64).
+    Truyền dữ liệu trực tiếp vào Standalone AI Engine (Port 8001).
+    """
+    try:
+        return face_service.inspect_uniform_base64(
+            image_base64=payload.image_base64,
+            weekday=payload.weekday or -1,
+            return_annotated=payload.return_annotated if payload.return_annotated is not None else True
+        )
+    except Exception as e:
+        logger.error(f"Uniform scan error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/uniform/scan-upload", tags=["Full-Body Uniform Inspection"])
+async def scan_uniform_upload_api(
+    weekday: int = Form(-1),
+    file: UploadFile = File(...),
+):
+    """
+    API Riêng: Quét toàn thân & phân tích trang phục bằng file ảnh tải lên.
+    """
+    try:
+        import base64
+        contents = await file.read()
+        b64_str = base64.b64encode(contents).decode("utf-8")
+        return face_service.inspect_uniform_base64(
+            image_base64=b64_str,
+            weekday=weekday,
+            return_annotated=True
+        )
+    except Exception as e:
+        logger.error(f"Uniform upload scan error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ====================================================================
+# LIVE CAMERA REAL-TIME STREAMING & SCANNING
+# ====================================================================
+
+_live_checkin_cooldown: Dict[str, float] = {}
+
+
+@app.post("/api/staff/live-scan", tags=["Live Camera AI Scan"])
+async def staff_live_scan_api(payload: StaffLiveScanRequest):
+    """
+    API Quét Live Thời Gian Thực:
+    - Nhận diện khuôn mặt FaceID + Chống giả mạo Anti-Spoofing
+    - Nhận diện vóc dáng người, vùng áo, vùng quần và kiểm tra quy định đồng phục
+    - Nếu bật auto_checkin và nhận diện nhân viên hợp lệ (confidence >= 0.55):
+      Tự động ghi nhận chấm công (kèm cooldown 12s tránh spam liên tục) và phát WebSocket
+    """
+    try:
+        # Gọi phân tích AI toàn diện
+        inspect_res = face_service.inspect_uniform_base64(
+            image_base64=payload.image_base64,
+            weekday=payload.weekday if payload.weekday is not None else -1,
+            return_annotated=payload.return_annotated if payload.return_annotated is not None else False,
+        )
+
+        checked_in = False
+        attendance_record = None
+        cooldown_active = False
+
+        faces = inspect_res.get("faces", [])
+        if payload.auto_checkin and faces:
+            # Tìm khuôn mặt hợp lệ nhất (đã đăng ký, độ tin cậy >= 0.55 và là người thật)
+            valid_face = None
+            for f in faces:
+                stu_id = f.get("student_id")
+                if stu_id and stu_id != "UNKNOWN":
+                    liveness = f.get("liveness", {})
+                    is_real = liveness.get("is_real", True)
+                    conf = f.get("confidence", 0.0)
+                    if conf >= 0.55 and is_real:
+                        valid_face = f
+                        break
+
+            if valid_face:
+                sid = valid_face["student_id"]
+                sname = valid_face.get("name", "Nhân sự")
+                now = time.time()
+                last_time = _live_checkin_cooldown.get(sid, 0)
+
+                # Cooldown 12 giây cho cùng 1 nhân sự
+                if now - last_time >= 12.0:
+                    _live_checkin_cooldown[sid] = now
+                    attendance_record = staff_repo.log_attendance(
+                        staff_id=sid,
+                        staff_name=sname,
+                        pen_id=payload.pen_id or "123",
+                        status="present",
+                        check_type=payload.check_type or "check_in",
+                        confidence=valid_face.get("confidence", 1.0),
+                        is_real=True,
+                        note=f"Quét FaceID Live Camera 24/7 ({payload.check_type or 'Vào ca'})",
+                    )
+                    checked_in = True
+                    await ws_manager.broadcast("staff_checkin", {
+                        "attendance": attendance_record,
+                        "staff_id": sid,
+                        "staff_name": sname,
+                        "check_type": payload.check_type or "check_in",
+                        "mode": "live_stream",
+                    })
+                else:
+                    cooldown_active = True
+
+        return {
+            "status": "success",
+            "checked_in": checked_in,
+            "cooldown_active": cooldown_active,
+            "attendance": attendance_record,
+            "person_detected": inspect_res.get("person_detected", False),
+            "faces_detected": inspect_res.get("faces_detected", 0),
+            "faces": faces,
+            "uniform": inspect_res.get("uniform"),
+            "process_time_ms": inspect_res.get("process_time_ms", 0),
+            "annotated_image_base64": inspect_res.get("annotated_image_base64"),
+        }
+    except Exception as e:
+        logger.error(f"Live scan error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/camera/video_feed", tags=["Camera Stream"])
+async def get_camera_video_feed(overlay: bool = Query(True)):
+    """
+    Proxy luồng video MJPEG trực tiếp từ Standalone AI Engine (Port 8001).
+    Hỗ trợ nhúng trực tiếp vào thẻ <img src="/api/camera/video_feed">.
+    """
+    vision_url = f"http://localhost:8001/api/v1/camera/video_feed?overlay={str(overlay).lower()}"
+    try:
+        client = httpx.AsyncClient(timeout=None)
+        req = client.build_request("GET", vision_url)
+        resp = await client.send(req, stream=True)
+
+        async def stream_generator():
+            try:
+                async for chunk in resp.aiter_bytes():
+                    yield chunk
+            finally:
+                await resp.aclose()
+                await client.aclose()
+
+        return StreamingResponse(
+            stream_generator(),
+            media_type="multipart/x-mixed-replace; boundary=frame"
+        )
+    except Exception as e:
+        logger.warning(f"Error proxying camera feed from {vision_url}: {e}")
+        raise HTTPException(status_code=503, detail="Camera Stream service unavailable")
+
+
+@app.get("/api/camera/status", tags=["Camera Stream"])
+async def get_camera_status():
+    """Lấy trạng thái luồng camera phần cứng."""
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp = await client.get("http://localhost:8001/api/v1/camera/status")
+            return resp.json()
+    except Exception as e:
+        return {"is_running": False, "error": str(e)}
+
+
+@app.get("/api/camera/latest", tags=["Camera Stream"])
+async def get_camera_latest():
+    """Lấy telemetries nhận diện khuôn mặt & đồng phục mới nhất từ camera phần cứng."""
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp = await client.get("http://localhost:8001/api/v1/camera/latest")
+            return resp.json()
+    except Exception as e:
+        return {"status": "offline", "error": str(e)}
+
+
+@app.post("/api/camera/start", tags=["Camera Stream"])
+async def start_camera_device(source: str = "0", weekday: Optional[int] = None):
+    """Bật camera phần cứng cổng 8001."""
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.post(
+                "http://localhost:8001/api/v1/camera/start",
+                json={"source": source, "weekday_override": weekday}
+            )
+            return resp.json()
+    except Exception as e:
+        raise HTTPException(500, detail=str(e))
+
+
+@app.post("/api/camera/stop", tags=["Camera Stream"])
+async def stop_camera_device():
+    """Dừng camera phần cứng cổng 8001."""
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.post("http://localhost:8001/api/v1/camera/stop")
+            return resp.json()
+    except Exception as e:
+        raise HTTPException(500, detail=str(e))
 
 
 # ====================================================================
@@ -963,12 +1216,16 @@ async def dashboard():
         <div class="bg-slate-900 rounded-2xl border border-slate-800 p-4 shadow-xl">
           <div class="flex justify-between items-center mb-2">
             <h3 class="font-semibold text-sm flex items-center gap-2 text-cyan-400">
-              <span>👤</span> Nhân Sự & Điểm Danh FaceID
+              <span>👤</span> Chấm Công & Quét Mặt 24/7
             </h3>
             <span id="visionBadge" class="text-[10px] bg-cyan-950 text-cyan-400 border border-cyan-800 px-2 py-0.5 rounded-full">AI Face Engine</span>
           </div>
-          <p class="text-[11px] text-slate-400 mb-2">Điểm danh nhân sự vào ca trực qua AI nhận diện khuôn mặt:</p>
+          <p class="text-[11px] text-slate-400 mb-2">Chấm công tức thì và quét mặt mọi lúc không giới hạn ca:</p>
           <div class="space-y-2 text-xs">
+            <div class="flex gap-2">
+              <button id="btnCheckInType" onclick="setDashboardCheckType('check_in')" class="flex-1 py-1 rounded bg-emerald-600 text-white font-bold transition">Vào Ca</button>
+              <button id="btnCheckOutType" onclick="setDashboardCheckType('check_out')" class="flex-1 py-1 rounded bg-slate-800 text-slate-300 font-bold transition">Tan Ca</button>
+            </div>
             <div class="flex gap-2">
               <select id="staffCheckinId" class="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-200">
                 <option value="NV01">NV01 - Nguyễn Văn An (Quản lý)</option>
@@ -977,12 +1234,23 @@ async def dashboard():
                 <option value="NV04">NV04 - Phạm Văn Cường (Nông học)</option>
               </select>
               <button onclick="quickStaffCheckIn()" class="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 font-medium text-white rounded-lg transition shadow">
-                Điểm Danh
+                Chấm Công
+              </button>
+            </div>
+            <div>
+              <button id="btnToggleDashboardCam" onclick="toggleDashboardWebcam()" class="w-full py-1.5 bg-slate-800 hover:bg-slate-700 text-cyan-400 rounded-lg font-medium transition flex items-center justify-center gap-1">
+                📸 Bật Camera Quét Mặt 24/7
+              </button>
+            </div>
+            <div id="dashboardWebcamBox" class="hidden space-y-2">
+              <video id="dashboardVideo" autoplay playsinline muted class="w-full rounded-lg bg-black border border-cyan-800 aspect-video"></video>
+              <button onclick="captureDashboardFace()" class="w-full py-1.5 bg-gradient-to-r from-cyan-500 to-emerald-500 text-slate-950 font-bold rounded-lg shadow">
+                🎯 Chụp & Nhận Diện Chấm Công
               </button>
             </div>
             <div class="mt-2 border-t border-slate-800 pt-2">
               <div class="text-[11px] text-slate-400 flex justify-between mb-1">
-                <span>Đã vào ca hôm nay:</span>
+                <span>Lượt chấm công hôm nay:</span>
                 <span id="staffPresentCount" class="text-cyan-400 font-bold">0 người</span>
               </div>
               <div id="staffAttendanceList" class="max-h-24 overflow-y-auto space-y-1 text-[11px]">
@@ -1318,27 +1586,106 @@ async def dashboard():
       document.getElementById('chatBox').innerHTML = '';
     }
 
+    let dashboardCheckType = 'check_in';
+    let dashboardStream = null;
+
+    function setDashboardCheckType(type) {
+      dashboardCheckType = type;
+      const btnIn = document.getElementById('btnCheckInType');
+      const btnOut = document.getElementById('btnCheckOutType');
+      if (type === 'check_in') {
+        btnIn.className = 'flex-1 py-1 rounded bg-emerald-600 text-white font-bold transition';
+        btnOut.className = 'flex-1 py-1 rounded bg-slate-800 text-slate-300 font-bold transition';
+      } else {
+        btnIn.className = 'flex-1 py-1 rounded bg-slate-800 text-slate-300 font-bold transition';
+        btnOut.className = 'flex-1 py-1 rounded bg-rose-600 text-white font-bold transition';
+      }
+    }
+
+    async function toggleDashboardWebcam() {
+      const box = document.getElementById('dashboardWebcamBox');
+      const btn = document.getElementById('btnToggleDashboardCam');
+      const video = document.getElementById('dashboardVideo');
+
+      if (dashboardStream) {
+        dashboardStream.getTracks().forEach(t => t.stop());
+        dashboardStream = null;
+        box.classList.add('hidden');
+        btn.innerHTML = '📸 Bật Camera Quét Mặt 24/7';
+        btn.classList.remove('text-rose-400');
+        btn.classList.add('text-cyan-400');
+      } else {
+        try {
+          dashboardStream = await navigator.mediaDevices.getUserMedia({ video: { width: 480, height: 360 } });
+          video.srcObject = dashboardStream;
+          box.classList.remove('hidden');
+          btn.innerHTML = '🛑 Tắt Camera';
+          btn.classList.remove('text-cyan-400');
+          btn.classList.add('text-rose-400');
+        } catch (e) {
+          alert("Không thể mở webcam: " + e);
+        }
+      }
+    }
+
+    async function captureDashboardFace() {
+      const video = document.getElementById('dashboardVideo');
+      if (!video || !dashboardStream) return;
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth || 480;
+      canvas.height = video.videoHeight || 360;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const b64 = canvas.toDataURL('image/jpeg', 0.85);
+
+      try {
+        const res = await fetch('/api/staff/checkin', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            image_base64: b64, 
+            pen_id: currentPenId, 
+            check_type: dashboardCheckType,
+            note: 'Quét mặt trực tiếp qua Dashboard 24/7'
+          })
+        });
+        const data = await res.json();
+        showAlertPopup({
+          alert_type: "STAFF_CHECKIN",
+          message: `👤 ${data.message || 'Chấm công thành công'}`
+        });
+        await loadStaffAttendance();
+      } catch (e) {
+        alert("Lỗi khi quét mặt: " + e);
+      }
+    }
+
     async function loadStaffAttendance() {
       try {
-        const res = await fetch('/api/staff/attendance');
+        const res = await fetch('/api/staff/attendance/history?limit=15');
         const logs = await res.json();
         const listEl = document.getElementById('staffAttendanceList');
         const countEl = document.getElementById('staffPresentCount');
-        if (countEl) countEl.textContent = `${logs.length} người`;
+        if (countEl) countEl.textContent = `${logs.length} lượt`;
         if (!listEl) return;
         if (logs.length === 0) {
-          listEl.innerHTML = '<p class="text-slate-500 text-center py-2">Chưa có ai điểm danh hôm nay.</p>';
+          listEl.innerHTML = '<p class="text-slate-500 text-center py-2">Chưa có ai chấm công.</p>';
           return;
         }
-        listEl.innerHTML = logs.map(l => `
-          <div class="flex justify-between items-center p-1.5 rounded bg-slate-950 border border-slate-800">
-            <div>
-              <span class="font-medium text-slate-200">${l.staff_name}</span>
-              <span class="text-[10px] text-slate-400">(${l.staff_id})</span>
+        listEl.innerHTML = logs.map(l => {
+          const isOut = l.check_type === 'check_out';
+          const typeTag = isOut ? '<span class="text-rose-400 font-bold">[Tan ca]</span>' : '<span class="text-emerald-400 font-bold">[Vào ca]</span>';
+          return `
+            <div class="flex justify-between items-center p-1.5 rounded bg-slate-950 border border-slate-800">
+              <div>
+                <span class="font-medium text-slate-200">${l.staff_name}</span>
+                <span class="text-[10px] text-slate-400">(${l.staff_id})</span>
+                ${typeTag}
+              </div>
+              <span class="text-[10px] text-cyan-400 font-mono">Chuồng ${l.pen_id || '123'} • ${new Date(l.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'})}</span>
             </div>
-            <span class="text-[10px] text-cyan-400 font-mono">Chuồng ${l.pen_id || '123'} • ${new Date(l.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-          </div>
-        `).join('');
+          `;
+        }).join('');
       } catch (e) {
         console.error("Error loading staff attendance:", e);
       }
@@ -1350,16 +1697,21 @@ async def dashboard():
         const res = await fetch('/api/staff/checkin', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ staff_id: staffId, pen_id: currentPenId, note: 'Điểm danh từ Web Dashboard' })
+          body: JSON.stringify({ 
+            staff_id: staffId, 
+            pen_id: currentPenId, 
+            check_type: dashboardCheckType,
+            note: 'Chấm công thủ công qua Web Dashboard' 
+          })
         });
         const data = await res.json();
         showAlertPopup({
           alert_type: "STAFF_CHECKIN",
-          message: `👤 ${data.message || 'Điểm danh thành công'} (Độ tin cậy: 98% - Người thật)`
+          message: `👤 ${data.message || 'Chấm công thành công'}`
         });
         await loadStaffAttendance();
       } catch (e) {
-        alert("Lỗi khi điểm danh: " + e);
+        alert("Lỗi khi chấm công: " + e);
       }
     }
 

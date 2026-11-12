@@ -65,7 +65,7 @@ class FaceEngine:
                  nms_threshold: float = 0.30,
                  cosine_threshold: float = 0.42,
                  margin_threshold: float = 0.08,
-                 min_face_size: int = 40,
+                 min_face_size: int = 18,
                  force_reload: bool = False):
 
         self.faces_dir = faces_dir

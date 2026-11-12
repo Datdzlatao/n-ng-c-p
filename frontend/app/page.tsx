@@ -14,6 +14,7 @@ import StoriesBar from '../components/StoriesBar';
 import FeedAlertPinned from '../components/FeedAlertPinned';
 import FeedBriefingCard from '../components/FeedBriefingCard';
 import FeedEnvMonitor from '../components/FeedEnvMonitor';
+import FeedStaffAttendance from '../components/FeedStaffAttendance';
 import FeedLivestockCrops from '../components/FeedLivestockCrops';
 import FeedInventory from '../components/FeedInventory';
 import MessengerChatBubble from '../components/MessengerChatBubble';
@@ -153,6 +154,9 @@ export default function Home() {
             ...prev,
             [data.pen_id || 'unknown']: [data.message],
           }));
+        } else if (event === 'staff_checkin') {
+          const actionText = data.check_type === 'check_out' ? 'tan ca' : 'vào ca';
+          showRealtimeNotification('staff', `👤 Nhân sự ${data.staff_name || data.staff_id} đã ${actionText} (${data.pen_id || 'Trang trại'})`);
         }
       },
       (status) => setWsConnected(status === 'connected')
@@ -873,7 +877,14 @@ export default function Home() {
             onOpenChat={() => setIsMessengerOpen(true)}
           />
 
-          {/* E. Livestock & Crops Feed Post */}
+          {/* E. Staff Attendance & 24/7 Face Scan Feed Post */}
+          <FeedStaffAttendance
+            currentPenId={currentPenId}
+            penName={currentPen.name}
+            onNotification={(title, desc) => showRealtimeNotification('staff', desc)}
+          />
+
+          {/* F. Livestock & Crops Feed Post */}
           <FeedLivestockCrops
             currentMode={currentMode}
             animals={animals}

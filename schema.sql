@@ -175,6 +175,7 @@ CREATE TABLE IF NOT EXISTS public.staff_attendance (
     staff_name TEXT NOT NULL,
     pen_id TEXT REFERENCES public.pens(id) ON DELETE SET NULL,
     status TEXT DEFAULT 'present',
+    check_type TEXT DEFAULT 'check_in',
     confidence DOUBLE PRECISION DEFAULT 1.0,
     is_real BOOLEAN DEFAULT true,
     note TEXT,

@@ -297,7 +297,23 @@ class StaffCheckInRequest(BaseModel):
     staff_id: Optional[str] = Field(default=None, description="Mã nhân viên nếu biết trước")
     image_base64: Optional[str] = Field(default=None, description="Ảnh khuôn mặt Base64 để nhận diện")
     pen_id: Optional[str] = Field(default="123", description="Mã chuồng nơi điểm danh")
+    check_type: Optional[str] = Field(default="check_in", description="Loại chấm công: check_in (Vào ca), check_out (Tan ca), instant (Chấm công tức thì mọi lúc)")
     note: Optional[str] = Field(default="", description="Ghi chú thêm khi điểm danh")
+
+
+class UniformInspectRequest(BaseModel):
+    image_base64: str = Field(..., description="Ảnh toàn thân Base64 để kiểm tra đồng phục")
+    weekday: Optional[int] = Field(default=-1, description="Mã ngày quy định: -1 (Chuẩn chung), 0-4 (Thứ 2 - Thứ 6)")
+    return_annotated: Optional[bool] = Field(default=True, description="Có trả về ảnh đã vẽ khung HUD trực quan không")
+
+
+class StaffLiveScanRequest(BaseModel):
+    image_base64: str = Field(..., description="Khung hình Base64 từ luồng live camera")
+    pen_id: Optional[str] = Field(default="123", description="Mã chuồng nơi quét")
+    check_type: Optional[str] = Field(default="check_in", description="Loại chấm công: check_in, check_out, instant")
+    weekday: Optional[int] = Field(default=-1, description="Mã ngày quy định đồng phục (-1: mặc định)")
+    auto_checkin: Optional[bool] = Field(default=True, description="Tự động ghi nhận chấm công nếu nhận diện được nhân viên")
+    return_annotated: Optional[bool] = Field(default=False, description="Có trả về ảnh HUD Base64 không")
 
 
 class StaffAttendanceInDB(BaseModel):
@@ -306,6 +322,7 @@ class StaffAttendanceInDB(BaseModel):
     staff_name: str
     pen_id: Optional[str] = None
     status: str = "present"
+    check_type: Optional[str] = "check_in"
     confidence: Optional[float] = 1.0
     is_real: Optional[bool] = True
     note: Optional[str] = ""

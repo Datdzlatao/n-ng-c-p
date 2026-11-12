@@ -9,6 +9,7 @@ và Trang phục vào bất kỳ hệ thống nào (Node.js, C#, PHP, Java, Pyth
 Khởi chạy:
   uvicorn api_server:app --host 0.0.0.0 --port 8001
 """
+import time
 import base64
 import cv2
 import numpy as np
@@ -18,9 +19,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List, Union
 
-from standalone_runner import StandaloneVisionPipeline
-from camera_service import CameraStreamService
-from web_viewer import VIEWER_HTML
+try:
+    from standalone_runner import StandaloneVisionPipeline
+    from camera_service import CameraStreamService
+    from web_viewer import VIEWER_HTML
+except ImportError:
+    from standalone_ai_engine.standalone_runner import StandaloneVisionPipeline
+    from standalone_ai_engine.camera_service import CameraStreamService
+    from standalone_ai_engine.web_viewer import VIEWER_HTML
 
 app = FastAPI(
     title="Standalone AI Vision API",
@@ -44,6 +50,12 @@ camera_service = CameraStreamService(pipeline)
 def shutdown_event():
     """Giải phóng camera khi tắt server."""
     camera_service.stop()
+
+
+class UniformInspectRequest(BaseModel):
+    image_base64: str
+    weekday: Optional[int] = -1
+    return_annotated: Optional[bool] = True
 
 
 class Base64AnalyzeRequest(BaseModel):
@@ -220,6 +232,106 @@ async def enroll_face(
         "status": "success",
         "message": f"Đã đăng ký thành công FaceID cho {student_name} ({student_id})",
         "total_faces": len(pipeline.face_engine.known_ids)
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 4. DEDICATED FULL-BODY & UNIFORM INSPECTION API (MODULE PHÂN BIỆT ĐỒNG PHỤC)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.post("/api/v1/uniform/inspect", tags=["Full-Body Uniform Inspection"])
+async def inspect_uniform_base64(req: UniformInspectRequest):
+    """
+    API Riêng: Quét toàn bộ người & phân tích trang phục đồng phục chi tiết qua Base64.
+    - Phát hiện vóc dáng người toàn diện (HOG Person Detector + Face estimation)
+    - Phân tích màu sắc áo và quần trong không gian màu HSV
+    - Đánh giá đúng/sai đồng phục theo quy định
+    - Trả về kết quả và ảnh đã vẽ khung (annotated HUD)
+    """
+    t0 = time.time()
+    img = decode_image_base64(req.image_base64)
+
+    # 1. Phát hiện khuôn mặt (nếu có để hỗ trợ xác định thân người)
+    faces = pipeline.face_engine.recognize(img)
+    first_loc = faces[0]["location"] if faces else None
+
+    # 2. Quét toàn thân và kiểm tra đồng phục
+    uniform_res = pipeline.uniform_checker.check_uniform(
+        img,
+        face_location=first_loc,
+        weekday_override=req.weekday
+    )
+
+    annotated_b64 = None
+    if req.return_annotated:
+        annotated_img = pipeline.uniform_checker.draw_uniform_hud(img, uniform_res)
+        for f in faces:
+            top, right, bottom, left = f["location"]
+            cv2.rectangle(annotated_img, (left, top), (right, bottom), (255, 255, 0), 2)
+            cv2.putText(annotated_img, f"{f.get('name', 'Face')}", (left, max(15, top - 6)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 0), 1, cv2.LINE_AA)
+        _, buf = cv2.imencode(".jpg", annotated_img, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        annotated_b64 = "data:image/jpeg;base64," + base64.b64encode(buf.tobytes()).decode("utf-8")
+
+    dt = round((time.time() - t0) * 1000, 1)
+
+    return {
+        "status": "success",
+        "process_time_ms": dt,
+        "person_detected": uniform_res.get("person_detected", False),
+        "faces_detected": len(faces),
+        "faces": faces,
+        "uniform": uniform_res,
+        "annotated_image_base64": annotated_b64
+    }
+
+
+@app.post("/api/v1/uniform/inspect-upload", tags=["Full-Body Uniform Inspection"])
+async def inspect_uniform_upload(
+    file: UploadFile = File(...),
+    weekday: Optional[int] = Form(-1),
+    return_annotated: bool = Form(True)
+):
+    """
+    API Riêng: Quét toàn bộ người & kiểm tra đồng phục bằng file ảnh tải lên.
+    """
+    contents = await file.read()
+    arr = np.frombuffer(contents, dtype=np.uint8)
+    img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+    if img is None:
+        raise HTTPException(400, "Tệp tải lên không phải ảnh hợp lệ.")
+
+    t0 = time.time()
+    faces = pipeline.face_engine.recognize(img)
+    first_loc = faces[0]["location"] if faces else None
+
+    uniform_res = pipeline.uniform_checker.check_uniform(
+        img,
+        face_location=first_loc,
+        weekday_override=weekday
+    )
+
+    annotated_b64 = None
+    if return_annotated:
+        annotated_img = pipeline.uniform_checker.draw_uniform_hud(img, uniform_res)
+        for f in faces:
+            top, right, bottom, left = f["location"]
+            cv2.rectangle(annotated_img, (left, top), (right, bottom), (255, 255, 0), 2)
+            cv2.putText(annotated_img, f"{f.get('name', 'Face')}", (left, max(15, top - 6)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 0), 1, cv2.LINE_AA)
+        _, buf = cv2.imencode(".jpg", annotated_img, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        annotated_b64 = "data:image/jpeg;base64," + base64.b64encode(buf.tobytes()).decode("utf-8")
+
+    dt = round((time.time() - t0) * 1000, 1)
+
+    return {
+        "status": "success",
+        "process_time_ms": dt,
+        "person_detected": uniform_res.get("person_detected", False),
+        "faces_detected": len(faces),
+        "faces": faces,
+        "uniform": uniform_res,
+        "annotated_image_base64": annotated_b64
     }
 
 
