@@ -32,6 +32,7 @@ import {
 } from 'lucide-react';
 import { 
   BACKEND_URL,
+  FACE_API_URL,
   getStaffList, 
   getStaffAttendanceHistory, 
   checkInStaff, 
@@ -100,7 +101,7 @@ export default function FeedStaffAttendance({
   // Hardware Stream URL State
   const [hardwareStreamKey, setHardwareStreamKey] = useState<number>(Date.now());
   const [hardwareStreamUrl, setHardwareStreamUrl] = useState<string>(
-    `${BACKEND_URL}/api/camera/video_feed?overlay=true`
+    `${FACE_API_URL}/api/v1/camera/video_feed?overlay=true`
   );
 
   // Live Detection Results
@@ -714,7 +715,7 @@ export default function FeedStaffAttendance({
 
     const newKey = Date.now();
     setHardwareStreamKey(newKey);
-    setHardwareStreamUrl(`${BACKEND_URL}/api/camera/video_feed?overlay=true&t=${newKey}`);
+    setHardwareStreamUrl(`${FACE_API_URL}/api/v1/camera/video_feed?overlay=true&t=${newKey}`);
 
     try {
       await startCameraDeviceAPI('0', uniformRuleWeekday);
@@ -1041,7 +1042,7 @@ export default function FeedStaffAttendance({
             }`}
           >
             <span className={`w-2 h-2 rounded-full ${visionOnline ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
-            {visionOnline ? 'AI Vision Microservice (Port 8001)' : 'Embedded AI Sẵn Sàng'}
+            {visionOnline ? 'AI Vision Microservice (Online)' : 'Embedded AI Sẵn Sàng'}
           </span>
 
           {/* Button: Đăng ký FaceID mới */}
@@ -1540,9 +1541,13 @@ export default function FeedStaffAttendance({
               alt="Luồng Camera AI Server 30 FPS"
               className="w-full h-full object-contain"
               onError={() => {
-                // Auto fallback to direct Port 8001 if Port 8000 proxy times out
-                console.warn('Proxy feed failed, trying direct 8001 microservice...');
-                setHardwareStreamUrl(`http://localhost:8001/api/v1/camera/video_feed?overlay=true&t=${Date.now()}`);
+                // Tự động chuyển đổi giữa direct FACE_API_URL và BACKEND_URL proxy
+                console.warn('Stream feed failed, toggling direct vs proxy URL...');
+                setHardwareStreamUrl((prev) =>
+                  prev.includes(FACE_API_URL)
+                    ? `${BACKEND_URL}/api/camera/video_feed?overlay=true&t=${Date.now()}`
+                    : `${FACE_API_URL}/api/v1/camera/video_feed?overlay=true&t=${Date.now()}`
+                );
               }}
             />
           )}

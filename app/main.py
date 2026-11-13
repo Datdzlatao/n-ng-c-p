@@ -684,8 +684,9 @@ async def enroll_staff_face_api(
 async def reload_staff_faces_api():
     """Làm mới danh sách FaceID từ thư mục standalone_ai_engine/known_faces."""
     try:
+        vision_base = settings.VISION_ENGINE_URL.rstrip('/')
         async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post("http://localhost:8001/api/v1/faces/reload")
+            resp = await client.post(f"{vision_base}/api/v1/faces/reload")
             if resp.status_code == 200:
                 return resp.json()
             raise HTTPException(resp.status_code, resp.text)
@@ -832,7 +833,8 @@ async def get_camera_video_feed(overlay: bool = Query(True)):
     Proxy luồng video MJPEG trực tiếp từ Standalone AI Engine (Port 8001).
     Hỗ trợ nhúng trực tiếp vào thẻ <img src="/api/camera/video_feed">.
     """
-    vision_url = f"http://localhost:8001/api/v1/camera/video_feed?overlay={str(overlay).lower()}"
+    vision_base = settings.VISION_ENGINE_URL.rstrip('/')
+    vision_url = f"{vision_base}/api/v1/camera/video_feed?overlay={str(overlay).lower()}"
     try:
         client = httpx.AsyncClient(timeout=None)
         req = client.build_request("GET", vision_url)
@@ -859,8 +861,9 @@ async def get_camera_video_feed(overlay: bool = Query(True)):
 async def get_camera_status():
     """Lấy trạng thái luồng camera phần cứng."""
     try:
+        vision_base = settings.VISION_ENGINE_URL.rstrip('/')
         async with httpx.AsyncClient(timeout=3.0) as client:
-            resp = await client.get("http://localhost:8001/api/v1/camera/status")
+            resp = await client.get(f"{vision_base}/api/v1/camera/status")
             return resp.json()
     except Exception as e:
         return {"is_running": False, "error": str(e)}
@@ -870,8 +873,9 @@ async def get_camera_status():
 async def get_camera_latest():
     """Lấy telemetries nhận diện khuôn mặt & đồng phục mới nhất từ camera phần cứng."""
     try:
+        vision_base = settings.VISION_ENGINE_URL.rstrip('/')
         async with httpx.AsyncClient(timeout=3.0) as client:
-            resp = await client.get("http://localhost:8001/api/v1/camera/latest")
+            resp = await client.get(f"{vision_base}/api/v1/camera/latest")
             return resp.json()
     except Exception as e:
         return {"status": "offline", "error": str(e)}
@@ -879,11 +883,12 @@ async def get_camera_latest():
 
 @app.post("/api/camera/start", tags=["Camera Stream"])
 async def start_camera_device(source: str = "0", weekday: Optional[int] = None):
-    """Bật camera phần cứng cổng 8001."""
+    """Bật camera phần cứng."""
     try:
+        vision_base = settings.VISION_ENGINE_URL.rstrip('/')
         async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.post(
-                "http://localhost:8001/api/v1/camera/start",
+                f"{vision_base}/api/v1/camera/start",
                 json={"source": source, "weekday_override": weekday}
             )
             return resp.json()
@@ -893,10 +898,11 @@ async def start_camera_device(source: str = "0", weekday: Optional[int] = None):
 
 @app.post("/api/camera/stop", tags=["Camera Stream"])
 async def stop_camera_device():
-    """Dừng camera phần cứng cổng 8001."""
+    """Dừng camera phần cứng."""
     try:
+        vision_base = settings.VISION_ENGINE_URL.rstrip('/')
         async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.post("http://localhost:8001/api/v1/camera/stop")
+            resp = await client.post(f"{vision_base}/api/v1/camera/stop")
             return resp.json()
     except Exception as e:
         raise HTTPException(500, detail=str(e))

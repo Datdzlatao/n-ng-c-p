@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { 
+  BACKEND_URL,
   connectAgentWebSocket, 
   triggerDailyBriefing, 
   controlDeviceViaAPI 
@@ -983,7 +984,7 @@ export default function Home() {
           setPens((prev) => [...prev, newPen]);
           await supabase.from('pens').insert([newPen]);
           try {
-            await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/pens`, {
+            await fetch(`${BACKEND_URL}/api/pens`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(newPen),

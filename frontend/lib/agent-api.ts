@@ -1,5 +1,13 @@
-export const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-export const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000/ws';
+const DEFAULT_BACKEND_URL = 'https://dat-latitude-5590-2.tail2bda46.ts.net:8443';
+const DEFAULT_FACE_API_URL = 'https://dat-latitude-5590-2.tail2bda46.ts.net:10000';
+
+export const BACKEND_URL = (process.env.NEXT_PUBLIC_API_URL || DEFAULT_BACKEND_URL).replace(/\/+$/, '');
+export const FACE_API_URL = (process.env.NEXT_PUBLIC_FACE_API_URL || DEFAULT_FACE_API_URL).replace(/\/+$/, '');
+export const WS_URL = process.env.NEXT_PUBLIC_WS_URL || (
+  BACKEND_URL.startsWith('https://')
+    ? BACKEND_URL.replace(/^https:\/\//i, 'wss://') + '/ws'
+    : BACKEND_URL.replace(/^http:\/\//i, 'ws://') + '/ws'
+);
 
 export interface ChatResponse {
   reply: string;
@@ -331,6 +339,13 @@ export async function enrollStaffFace(
  * Reload FaceID from known_faces folder
  */
 export async function reloadStaffFacesAPI(): Promise<any> {
+  try {
+    const res = await fetch(`${FACE_API_URL}/api/v1/faces/reload`, {
+      method: 'POST',
+    });
+    if (res.ok) return await res.json();
+  } catch {}
+
   const res = await fetch(`${BACKEND_URL}/api/staff/reload-faces`, {
     method: 'POST',
   });
@@ -339,9 +354,19 @@ export async function reloadStaffFacesAPI(): Promise<any> {
 }
 
 /**
- * Check Standalone AI Engine Health
+ * Check Standalone AI Engine Health (Face Recognition Engine)
  */
 export async function getVisionHealth(): Promise<any> {
+  // First try direct Face Recognition API
+  try {
+    const res = await fetch(`${FACE_API_URL}/api/v1/health`);
+    if (res.ok) {
+      const data = await res.json();
+      return { online: true, ...data };
+    }
+  } catch {}
+
+  // Fallback to backend proxy check
   try {
     const res = await fetch(`${BACKEND_URL}/api/staff/vision-status`);
     if (!res.ok) return { online: false };
@@ -359,6 +384,21 @@ export async function scanUniformAPI(
   weekday: number = -1,
   returnAnnotated: boolean = true
 ): Promise<any> {
+  // Direct call to Face / Vision Engine
+  try {
+    const res = await fetch(`${FACE_API_URL}/api/v1/uniform/inspect`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        image_base64: imageBase64,
+        weekday,
+        return_annotated: returnAnnotated,
+      }),
+    });
+    if (res.ok) return await res.json();
+  } catch {}
+
+  // Fallback to backend proxy
   const res = await fetch(`${BACKEND_URL}/api/uniform/scan`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -384,6 +424,21 @@ export async function scanUniformUploadAPI(
   file: File,
   weekday: number = -1
 ): Promise<any> {
+  // Direct call to Face / Vision Engine
+  try {
+    const directForm = new FormData();
+    directForm.append('file', file);
+    if (weekday !== undefined && weekday >= 0) {
+      directForm.append('weekday_override', weekday.toString());
+    }
+    const res = await fetch(`${FACE_API_URL}/api/v1/uniform/inspect-upload`, {
+      method: 'POST',
+      body: directForm,
+    });
+    if (res.ok) return await res.json();
+  } catch {}
+
+  // Fallback to backend proxy
   const formData = new FormData();
   formData.append('file', file);
   formData.append('weekday', weekday.toString());
@@ -412,6 +467,34 @@ export async function liveScanStaffAPI(params: {
   autoCheckin?: boolean;
   returnAnnotated?: boolean;
 }): Promise<any> {
+  // When running purely detection (autoCheckin=false), call Face API directly for low latency
+  if (params.autoCheckin === false) {
+    try {
+      const res = await fetch(`${FACE_API_URL}/api/v1/uniform/inspect`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          image_base64: params.imageBase64,
+          weekday: params.weekday !== undefined ? params.weekday : -1,
+          return_annotated: params.returnAnnotated || false,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        return {
+          status: 'success',
+          faces: data.faces || [],
+          uniform: data.uniform || null,
+          faces_detected: data.faces_detected || (data.faces ? data.faces.length : 0),
+          person_detected: data.person_detected || false,
+          process_time_ms: data.process_time_ms || 0,
+          annotated_image_base64: data.annotated_image_base64 || null,
+        };
+      }
+    } catch {}
+  }
+
+  // Backend endpoint handles autoCheckin with database persistence & WebSocket broadcast
   const res = await fetch(`${BACKEND_URL}/api/staff/live-scan`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -434,9 +517,50 @@ export async function liveScanStaffAPI(params: {
 }
 
 /**
+ * Direct Face Recognition Analysis APIs
+ */
+export async function analyzeFaceDirectAPI(imageBase64: string, weekday?: number): Promise<any> {
+  const res = await fetch(`${FACE_API_URL}/api/v1/analyze`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      image_base64: imageBase64,
+      weekday_override: weekday,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(err || 'Lỗi khi phân tích khuôn mặt');
+  }
+  return await res.json();
+}
+
+export async function analyzeFaceUploadDirectAPI(file: File, weekday?: number): Promise<any> {
+  const formData = new FormData();
+  formData.append('file', file);
+  if (weekday !== undefined) {
+    formData.append('weekday_override', weekday.toString());
+  }
+  const res = await fetch(`${FACE_API_URL}/api/v1/analyze-upload`, {
+    method: 'POST',
+    body: formData,
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(err || 'Lỗi khi upload ảnh nhận diện khuôn mặt');
+  }
+  return await res.json();
+}
+
+/**
  * Camera Hardware Live Stream Controls
  */
 export async function getCameraStreamStatusAPI(): Promise<any> {
+  try {
+    const res = await fetch(`${FACE_API_URL}/api/v1/camera/status`);
+    if (res.ok) return await res.json();
+  } catch {}
+
   try {
     const res = await fetch(`${BACKEND_URL}/api/camera/status`);
     if (!res.ok) return { is_running: false };
@@ -448,6 +572,11 @@ export async function getCameraStreamStatusAPI(): Promise<any> {
 
 export async function getCameraLatestTelemetryAPI(): Promise<any> {
   try {
+    const res = await fetch(`${FACE_API_URL}/api/v1/camera/latest`);
+    if (res.ok) return await res.json();
+  } catch {}
+
+  try {
     const res = await fetch(`${BACKEND_URL}/api/camera/latest`);
     if (!res.ok) return null;
     return await res.json();
@@ -457,12 +586,26 @@ export async function getCameraLatestTelemetryAPI(): Promise<any> {
 }
 
 export async function startCameraDeviceAPI(source: string = '0', weekday?: number): Promise<any> {
+  try {
+    const res = await fetch(`${FACE_API_URL}/api/v1/camera/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source, weekday_override: weekday }),
+    });
+    if (res.ok) return await res.json();
+  } catch {}
+
   const url = `${BACKEND_URL}/api/camera/start?source=${encodeURIComponent(source)}${weekday !== undefined ? `&weekday=${weekday}` : ''}`;
   const res = await fetch(url, { method: 'POST' });
   return await res.json();
 }
 
 export async function stopCameraDeviceAPI(): Promise<any> {
+  try {
+    const res = await fetch(`${FACE_API_URL}/api/v1/camera/stop`, { method: 'POST' });
+    if (res.ok) return await res.json();
+  } catch {}
+
   const res = await fetch(`${BACKEND_URL}/api/camera/stop`, { method: 'POST' });
   return await res.json();
 }
