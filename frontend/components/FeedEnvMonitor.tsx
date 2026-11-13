@@ -242,7 +242,11 @@ export default function FeedEnvMonitor({
         >
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-slate-700 flex items-center gap-1">
-              <Wind className="w-3.5 h-3.5 text-emerald-700" />
+              {isLivestock ? (
+                <Wind className="w-3.5 h-3.5 text-emerald-700" />
+              ) : (
+                <Droplets className="w-3.5 h-3.5 text-emerald-700" />
+              )}
               {isLivestock ? 'Nồng Độ Khí Chuồng' : 'Độ Ẩm Của Đất'}
             </span>
             <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${

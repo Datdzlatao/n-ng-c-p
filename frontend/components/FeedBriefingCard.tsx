@@ -18,6 +18,7 @@ interface FeedBriefingCardProps {
   briefingText?: string;
   onTriggerBriefing?: () => void;
   isLoading?: boolean;
+  currentMode?: 'livestock' | 'cultivation';
 }
 
 export default function FeedBriefingCard({
@@ -28,9 +29,12 @@ export default function FeedBriefingCard({
   briefingText,
   onTriggerBriefing,
   isLoading = false,
+  currentMode = 'livestock',
 }: FeedBriefingCardProps) {
   const [liked, setLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(12);
+
+  const isLivestock = currentMode === 'livestock';
 
   const handleLike = () => {
     if (liked) {
@@ -48,10 +52,10 @@ export default function FeedBriefingCard({
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2.5">
           <div className="relative">
-            <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-emerald-600 via-teal-600 to-green-500 flex items-center justify-center text-white shadow">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-emerald-600 via-teal-600 to-green-500 flex items-center justify-center text-white shadow">
               <Bot className="w-5 h-5" />
             </div>
-            <span className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 rounded-full ring-2 ring-white" />
+            <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-500 rounded-full ring-2 ring-white" />
           </div>
 
           <div>
@@ -64,7 +68,7 @@ export default function FeedBriefingCard({
               </span>
             </div>
             <p className="text-xs text-fb-muted flex items-center gap-1">
-              Bản tin sáng tự động • 07:00 Hôm nay • 🌾 Toàn Bộ Trang Trại
+              Bản tin sáng tự động • 07:00 Hôm nay • {isLivestock ? '🐖 Khu Chăn Nuôi' : '🌿 Khu Trồng Trọt'}
             </p>
           </div>
         </div>
@@ -75,10 +79,10 @@ export default function FeedBriefingCard({
               onClick={onTriggerBriefing}
               disabled={isLoading}
               title="Tổng hợp lại toàn bộ dữ liệu nông trại và tạo bản tin mới"
-              className="text-xs flex items-center gap-1 px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold rounded-lg border border-emerald-200 transition disabled:opacity-50 cursor-pointer"
+              className="text-xs flex items-center gap-1 px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold rounded-xl border border-emerald-200 transition disabled:opacity-50 cursor-pointer"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-              <span>{isLoading ? 'Đang tạo...' : 'Làm Mới Bản Tin'}</span>
+              <span className="hidden sm:inline">{isLoading ? 'Đang tạo...' : 'Làm Mới'}</span>
             </button>
           )}
 
@@ -95,7 +99,7 @@ export default function FeedBriefingCard({
             {briefingText}
           </div>
         ) : (
-          <p className="leading-relaxed">
+          <p className="leading-relaxed text-xs sm:text-sm text-fb-text">
             Kính chào bà con! ☀️ Hôm nay thời tiết dự kiến ấm áp, khô ráo. Dưới đây là tổng hợp nhanh các đầu việc cần lưu ý trong ngày từ hệ thống phân tích tự động:
           </p>
         )}
@@ -119,16 +123,22 @@ export default function FeedBriefingCard({
           </div>
 
           <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 flex items-center gap-2">
-            <span className="text-xl">🩺</span>
+            <span className="text-xl">{isLivestock ? '🩺' : '🌿'}</span>
             <div>
-              <div className="text-xs text-rose-700">Vật nuôi cần theo dõi</div>
-              <div className="font-bold text-sm text-rose-800">{sickAnimalsCount} cá thể</div>
+              <div className="text-xs text-rose-700">
+                {isLivestock ? 'Vật nuôi cần chú ý' : 'Cây trồng cần tưới/chăm'}
+              </div>
+              <div className="font-bold text-sm text-rose-800">
+                {sickAnimalsCount} {isLivestock ? 'cá thể' : 'vụ/luống'}
+              </div>
             </div>
           </div>
         </div>
 
         <p className="text-xs text-fb-muted italic pt-1">
-          💡 Lưu ý quan trọng: Nên kiểm tra chuồng cách ly lúc 09:30 và bổ sung thức ăn vào kho trước 15:00 chiều.
+          {isLivestock
+            ? '💡 Lưu ý quan trọng: Nên kiểm tra chuồng cách ly lúc 09:30 và bổ sung thức ăn vào kho trước 15:00 chiều.'
+            : '💡 Lưu ý quan trọng: Nên kiểm tra độ ẩm đất nhà màng lúc 08:30 và bổ sung phân bón dinh dưỡng trước 15:00 chiều.'}
         </p>
       </div>
 
@@ -150,28 +160,28 @@ export default function FeedBriefingCard({
       <div className="grid grid-cols-3 gap-1 pt-1 mt-1 text-xs font-semibold text-fb-muted">
         <button
           onClick={handleLike}
-          className={`py-1.5 rounded-lg flex items-center justify-center gap-2 hover:bg-fb-hover transition cursor-pointer ${
-            liked ? 'text-emerald-700 font-bold' : ''
+          className={`flex items-center justify-center gap-1.5 py-2 rounded-xl transition cursor-pointer ${
+            liked ? 'text-emerald-700 font-bold bg-emerald-50' : 'hover:bg-fb-hover text-fb-muted'
           }`}
         >
-          <ThumbsUp className="w-4 h-4" />
-          <span>Thích</span>
+          <ThumbsUp className={`w-4 h-4 ${liked ? 'fill-emerald-600 text-emerald-600' : ''}`} />
+          <span>Hữu ích ({likeCount})</span>
         </button>
 
         <button
           onClick={onOpenChat}
-          className="py-1.5 rounded-lg flex items-center justify-center gap-2 hover:bg-fb-hover transition text-emerald-700 font-bold cursor-pointer"
+          className="flex items-center justify-center gap-1.5 py-2 rounded-xl hover:bg-fb-hover text-fb-muted transition cursor-pointer"
         >
-          <MessageSquare className="w-4 h-4" />
-          <span>Hỏi Chi Tiết Trợ Lý</span>
+          <MessageSquare className="w-4 h-4 text-emerald-600" />
+          <span>Hỏi chi tiết</span>
         </button>
 
         <button
-          onClick={() => alert('Đã sao chép nội dung bản tin vào khay nhớ tạm!')}
-          className="py-1.5 rounded-lg flex items-center justify-center gap-2 hover:bg-fb-hover transition cursor-pointer"
+          onClick={() => alert('Đã sao chép liên kết bản tin!')}
+          className="flex items-center justify-center gap-1.5 py-2 rounded-xl hover:bg-fb-hover text-fb-muted transition cursor-pointer"
         >
           <Share2 className="w-4 h-4" />
-          <span>Chia Sẻ</span>
+          <span>Chia sẻ</span>
         </button>
       </div>
     </div>

@@ -30,6 +30,7 @@ interface ActivityEvent {
 interface RightSidebarProps {
   devices: Device[];
   penName: string;
+  currentMode?: 'livestock' | 'cultivation';
   onToggleDevice: (id: string, currentStatus: boolean) => void;
   onOpenAddDeviceModal: () => void;
   recentActivities?: ActivityEvent[];
@@ -38,20 +39,24 @@ interface RightSidebarProps {
 export default function RightSidebar({
   devices,
   penName,
+  currentMode = 'livestock',
   onToggleDevice,
   onOpenAddDeviceModal,
   recentActivities = [],
 }: RightSidebarProps) {
-  const currentPenLabel = penName || 'Khu vực đang chọn';
+  const isLivestock = currentMode === 'livestock';
+  const currentPenLabel = penName || (isLivestock ? 'Chuồng nuôi đang chọn' : 'Vườn trồng đang chọn');
 
   return (
     <aside className="w-64 lg:w-72 shrink-0 hidden xl:block space-y-4">
-      {/* Khối điều khiển thiết bị điện chuồng trại */}
+      {/* Khối điều khiển thiết bị điện */}
       <div className="bg-fb-card rounded-2xl p-4 shadow-fb-card border border-fb-divider">
         <div className="flex items-center justify-between pb-2 border-b border-fb-divider mb-3">
           <div className="flex items-center gap-1.5">
             <Cpu className="w-4 h-4 text-emerald-600" />
-            <h4 className="font-bold text-sm text-fb-text">Thiết Bị Chuồng Trại</h4>
+            <h4 className="font-bold text-sm text-fb-text">
+              {isLivestock ? 'Thiết Bị Chuồng Trại' : 'Thiết Bị Vườn Trồng'}
+            </h4>
           </div>
 
           <button
@@ -63,20 +68,33 @@ export default function RightSidebar({
           </button>
         </div>
 
-        <p className="text-[11px] text-fb-muted mb-3">
+        <p className="text-[11px] text-fb-muted mb-3 truncate">
           Điều khiển thiết bị tại: <strong className="text-fb-text">{currentPenLabel}</strong>
         </p>
 
         {devices.length === 0 ? (
-          <div className="text-center py-6 text-fb-muted text-xs border border-dashed border-fb-divider rounded-xl">
-            Chưa có thiết bị nào. Hãy thêm quạt hút hoặc đèn sưởi!
+          <div className="text-center py-6 px-2 text-fb-muted text-xs border border-dashed border-fb-divider rounded-xl">
+            {isLivestock
+              ? 'Chưa có thiết bị nào. Hãy thêm quạt hút mùi hoặc đèn sưởi ấm!'
+              : 'Chưa có thiết bị nào. Hãy thêm máy bơm tưới hoặc quạt thông gió!'}
           </div>
         ) : (
           <div className="space-y-2.5">
             {devices.map((d) => {
-              const isFan = d.name.toLowerCase().includes('quạt');
-              const isWater = d.name.toLowerCase().includes('phun') || d.name.toLowerCase().includes('bơm');
-              const isLamp = d.name.toLowerCase().includes('đèn') || d.name.toLowerCase().includes('sưởi');
+              const nameLower = d.name.toLowerCase();
+              const isFan = nameLower.includes('quạt') || nameLower.includes('fan');
+              const isWater = 
+                nameLower.includes('phun') || 
+                nameLower.includes('bơm') || 
+                nameLower.includes('tưới') || 
+                nameLower.includes('pump') || 
+                nameLower.includes('water');
+              const isLamp = 
+                nameLower.includes('đèn') || 
+                nameLower.includes('sưởi') || 
+                nameLower.includes('quang hợp') || 
+                nameLower.includes('light') || 
+                nameLower.includes('heat');
 
               return (
                 <div
@@ -151,7 +169,9 @@ export default function RightSidebar({
               <div className="flex items-start gap-2 text-xs">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 mt-1.5 shrink-0" />
                 <div>
-                  <p className="font-semibold text-fb-text">Khí hậu chuồng nuôi ổn định</p>
+                  <p className="font-semibold text-fb-text">
+                    {isLivestock ? 'Khí hậu chuồng nuôi ổn định' : 'Vi khí hậu nhà màng ổn định'}
+                  </p>
                   <p className="text-[11px] text-fb-muted">Nhiệt độ 28.5°C, Độ ẩm 72%</p>
                   <span className="text-[10px] text-slate-400">1 phút trước</span>
                 </div>
@@ -160,8 +180,12 @@ export default function RightSidebar({
               <div className="flex items-start gap-2 text-xs">
                 <span className="w-2 h-2 rounded-full bg-blue-500 mt-1.5 shrink-0" />
                 <div>
-                  <p className="font-semibold text-fb-text">Cho đàn ăn theo lịch</p>
-                  <p className="text-[11px] text-fb-muted">Đã xuất 15kg cám chuồng A1</p>
+                  <p className="font-semibold text-fb-text">
+                    {isLivestock ? 'Cho đàn ăn theo lịch' : 'Tưới nước nhỏ giọt định kỳ'}
+                  </p>
+                  <p className="text-[11px] text-fb-muted">
+                    {isLivestock ? 'Đã xuất 15kg cám theo tiêu chuẩn' : 'Hệ thống tưới tự động 15 phút'}
+                  </p>
                   <span className="text-[10px] text-slate-400">25 phút trước</span>
                 </div>
               </div>
@@ -169,8 +193,12 @@ export default function RightSidebar({
               <div className="flex items-start gap-2 text-xs">
                 <span className="w-2 h-2 rounded-full bg-orange-500 mt-1.5 shrink-0" />
                 <div>
-                  <p className="font-semibold text-fb-text">Kiểm tra nồng độ khí chuồng</p>
-                  <p className="text-[11px] text-fb-muted">Chỉ số khí an toàn: 180 ppm</p>
+                  <p className="font-semibold text-fb-text">
+                    {isLivestock ? 'Kiểm tra nồng độ khí chuồng' : 'Kiểm tra độ ẩm của đất'}
+                  </p>
+                  <p className="text-[11px] text-fb-muted">
+                    {isLivestock ? 'Chỉ số an toàn: 180 ppm' : 'Độ ẩm đất lý tưởng: 68%'}
+                  </p>
                   <span className="text-[10px] text-slate-400">40 phút trước</span>
                 </div>
               </div>

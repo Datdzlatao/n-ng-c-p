@@ -672,6 +672,39 @@ export default function Home() {
     showRealtimeNotification('animals', `🎉 ĐÃ XUẤT CHUỒNG THÀNH CÔNG: Cá thể ${animal.id} (${animal.weight} kg)`);
   };
 
+  // Handle Thu Hoạch Vụ Mùa (Crop Harvest / Sell / Export) - Không cần F5
+  const handleExportCrop = async (crop: any) => {
+    const confirmed = confirm(
+      `XÁC NHẬN THU HOẠCH:\nBạn có chắc muốn thu hoạch / xuất bán vụ mùa "${crop.name}" (Quy mô: ${crop.quantity} gốc/luống tại ${currentPen.name})?`
+    );
+    if (!confirmed) return;
+
+    const activePen = currentPenIdRef.current;
+
+    // 1. Optimistic Update: Xóa ngay lập tức khỏi state để giao diện phản hồi tức thì
+    setCrops((prev) => prev.filter((c) => String(c.id).trim().toLowerCase() !== String(crop.id).trim().toLowerCase()));
+
+    try {
+      // 2. Xóa khỏi bảng crops trên Supabase
+      await supabase.from('crops').delete().eq('id', crop.id);
+
+      // 3. Ghi alert hệ thống
+      await supabase.from('alerts').insert([
+        {
+          pen_id: activePen,
+          alert_type: 'SYSTEM',
+          message: `Đã thu hoạch thành công vụ mùa ${crop.name} (${crop.quantity} gốc)`,
+        },
+      ]);
+    } catch (err) {
+      console.error('Lỗi khi lưu thu hoạch:', err);
+    }
+
+    // 4. Tự động tải lại dữ liệu chuồng/vườn để đồng bộ tuyệt đối
+    if (activePen) await loadPenData(activePen);
+    showRealtimeNotification('crops', `🎉 ĐÃ THU HOẠCH THÀNH CÔNG: Vụ mùa ${crop.name} (${crop.quantity} gốc)`);
+  };
+
   // Current pen helper
   const currentPen = pens.find((p) => p.id === currentPenId) || { id: currentPenId, name: 'Chuồng Trang Trại' };
   const currentPenIssues = activeAlerts[currentPenId] || [];
@@ -856,10 +889,21 @@ export default function Home() {
               issues={currentPenIssues}
               temp={envData.temp}
               smell={envData.smell}
+              currentMode={currentMode}
               onActivateFan={async () => {
-                alert('Đã kích hoạt quạt thông gió làm mát chuồng!');
-                const fanDev = devices.find((d) => d.name.toLowerCase().includes('quạt'));
-                if (fanDev) handleToggleDevice(fanDev.id, false);
+                if (currentMode === 'cultivation') {
+                  alert('Đã kích hoạt hệ thống tưới phun sương làm mát vườn!');
+                  const waterDev = devices.find((d) => 
+                    d.name.toLowerCase().includes('phun') || 
+                    d.name.toLowerCase().includes('bơm') || 
+                    d.name.toLowerCase().includes('tưới')
+                  );
+                  if (waterDev) handleToggleDevice(waterDev.id, false);
+                } else {
+                  alert('Đã kích hoạt quạt thông gió làm mát chuồng!');
+                  const fanDev = devices.find((d) => d.name.toLowerCase().includes('quạt'));
+                  if (fanDev) handleToggleDevice(fanDev.id, false);
+                }
               }}
               onDismiss={() => setDismissedAlert(true)}
               onAskAI={() => setIsMessengerOpen(true)}
@@ -871,10 +915,15 @@ export default function Home() {
             onOpenChat={() => setIsMessengerOpen(true)}
             pendingTasksCount={2}
             lowStockCount={inventory.filter((i) => i.quantity <= 5).length}
-            sickAnimalsCount={animals.filter((a) => a.feeding_status === 'Anorexic' || a.status === 'Sick').length}
+            sickAnimalsCount={
+              currentMode === 'livestock'
+                ? animals.filter((a) => a.feeding_status === 'Anorexic' || a.status === 'Sick').length
+                : crops.filter((c) => (c.status || '').toLowerCase().includes('care') || (c.status || '').toLowerCase().includes('sick') || (c.status || '').toLowerCase().includes('dry')).length
+            }
             briefingText={briefingText}
             onTriggerBriefing={handleTriggerBriefing}
             isLoading={isBriefingLoading}
+            currentMode={currentMode}
           />
 
           {/* D. Realtime Environment Monitor Post (Chart.js + Gauges) */}
@@ -909,6 +958,7 @@ export default function Home() {
                 : setModalOpen({ ...modalOpen, addCrop: true })
             }
             onExportAnimal={handleExportAnimal}
+            onExportCrop={handleExportCrop}
             onOpenTracking={async (animalId) => {
               setSelectedAnimalId(animalId);
               selectedAnimalIdRef.current = animalId;
@@ -957,9 +1007,10 @@ export default function Home() {
             }}
           />
 
-          {/* F. Inventory Feed Post */}
+          {/* G. Inventory Feed Post */}
           <FeedInventory
             items={inventory}
+            currentMode={currentMode}
             onOpenImport={() => setModalOpen({ ...modalOpen, importInv: true })}
             onOpenExport={() => setModalOpen({ ...modalOpen, exportInv: true })}
           />
@@ -969,6 +1020,7 @@ export default function Home() {
         <RightSidebar
           devices={devices}
           penName={currentPen.name}
+          currentMode={currentMode}
           onToggleDevice={handleToggleDevice}
           onOpenAddDeviceModal={() => setModalOpen({ ...modalOpen, addDevice: true })}
         />
@@ -1077,6 +1129,14 @@ export default function Home() {
           if (activePen) await loadPenData(activePen);
           showRealtimeNotification('weight_logs', `Đã cập nhật cân nặng mới: ${weight} kg`);
         }}
+        onDeleteWeight={async (logId) => {
+          const targetAnimalId = selectedAnimalIdRef.current;
+          setAnimalWeightLogs((prev) => prev.filter((l) => String(l.id) !== String(logId)));
+          await supabase.from('weight_logs').delete().eq('id', logId);
+          const { data } = await supabase.from('weight_logs').select('*').eq('animal_id', targetAnimalId);
+          if (data) setAnimalWeightLogs(data);
+          showRealtimeNotification('weight_logs', `Đã xóa mốc cân`);
+        }}
       />
 
       <ModalImport
@@ -1127,13 +1187,14 @@ export default function Home() {
       <ModalAddCrop
         isOpen={modalOpen.addCrop}
         onClose={() => setModalOpen({ ...modalOpen, addCrop: false })}
-        onAdd={async (name, quantity, date) => {
+        onAdd={async (name, quantity, date, expectedHarvest) => {
           const activePen = currentPenIdRef.current;
-          // Bảng crops dùng cột 'plant_date' và 'id' tự tăng
+          // Bảng crops dùng cột 'plant_date', 'harvest_date' và 'id' tự tăng
           const newCrop = {
             name,
             quantity: Number(quantity),
             plant_date: date || new Date().toISOString().split('T')[0],
+            harvest_date: expectedHarvest || null,
             pen_id: activePen,
           };
           await supabase.from('crops').insert([newCrop]);
@@ -1149,10 +1210,15 @@ export default function Home() {
         logs={cropGrowthLogs}
         onSaveGrowth={async (size) => {
           const targetCropId = selectedCropIdRef.current;
-          const newLog = { crop_id: targetCropId, size: Number(size), created_at: new Date().toISOString() };
+          const newLog = { crop_id: targetCropId, height_or_size: Number(size), created_at: new Date().toISOString() };
           setCropGrowthLogs((prev) => [...prev, newLog]);
           await supabase.from('crop_growth_logs').insert([newLog]);
-          showRealtimeNotification('crop_growth_logs', `Đã cập nhật tăng trưởng cây trồng`);
+          showRealtimeNotification('crop_growth_logs', `Đã cập nhật tăng trưởng cây trồng: ${size} cm`);
+        }}
+        onDeleteGrowth={async (logId) => {
+          setCropGrowthLogs((prev) => prev.filter((l) => String(l.id) !== String(logId)));
+          await supabase.from('crop_growth_logs').delete().eq('id', logId);
+          showRealtimeNotification('crop_growth_logs', `Đã xóa mốc đo tăng trưởng`);
         }}
       />
 
@@ -1161,12 +1227,17 @@ export default function Home() {
         onClose={() => setModalOpen({ ...modalOpen, cropCare: false })}
         cropId={selectedCropId}
         logs={cropCareLogs}
-        onAddCare={async (type, note) => {
+        onAddCare={async (type, note, action) => {
           const targetCropId = selectedCropIdRef.current;
-          const newLog = { crop_id: targetCropId, type, note, created_at: new Date().toISOString() };
-          setCropCareLogs((prev) => [...prev, newLog]);
+          const newLog = { crop_id: targetCropId, type, note, action: action || '', created_at: new Date().toISOString() };
+          setCropCareLogs((prev) => [newLog, ...prev]);
           await supabase.from('crop_care_logs').insert([newLog]);
-          showRealtimeNotification('crop_care_logs', `Đã ghi nhật ký chăm sóc`);
+          showRealtimeNotification('crop_care_logs', `Đã ghi nhật ký chăm sóc: ${action || type}`);
+        }}
+        onDeleteCare={async (logId) => {
+          setCropCareLogs((prev) => prev.filter((l) => String(l.id) !== String(logId)));
+          await supabase.from('crop_care_logs').delete().eq('id', logId);
+          showRealtimeNotification('crop_care_logs', `Đã xóa ghi chép chăm sóc`);
         }}
       />
       {/* 5. Live Realtime Notification Toast (F5-Free Instant Sync) */}

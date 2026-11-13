@@ -68,7 +68,11 @@ export default function Navbar({
           <Search className="w-4 h-4 text-fb-muted absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
-            placeholder="Tìm kiếm chuồng trại, đàn nuôi, kho..."
+            placeholder={
+              currentMode === 'livestock'
+                ? 'Tìm kiếm chuồng trại, đàn nuôi, kho...'
+                : 'Tìm kiếm vườn cây, mùa vụ, kho...'
+            }
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="bg-fb-bg text-sm rounded-full pl-9 pr-4 py-1.5 w-48 lg:w-64 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition border border-transparent focus:border-emerald-300"

@@ -134,7 +134,9 @@ export default function LeftSidebar({
           <span>Hệ Thống Giám Sát Tự Động 24/7</span>
         </div>
         <p className="text-[11px] text-emerald-800 leading-relaxed">
-          Tự động kiểm tra nhiệt độ, độ ẩm và nồng độ khí chuồng liên tục mỗi 15 giây theo thời gian thực.
+          {currentMode === 'livestock'
+            ? 'Tự động kiểm tra nhiệt độ, độ ẩm và nồng độ khí chuồng liên tục mỗi 15 giây theo thời gian thực.'
+            : 'Tự động kiểm tra nhiệt độ, độ ẩm không khí và độ ẩm đất vườn liên tục mỗi 15 giây theo thời gian thực.'}
         </p>
       </div>
     </aside>
