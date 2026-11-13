@@ -215,22 +215,72 @@ async def reload_faces():
 async def enroll_face(
     student_id: str = Form(...),
     student_name: str = Form(...),
-    file: UploadFile = File(...)
+    suffix: Optional[str] = Form(None),
+    file: Optional[UploadFile] = File(None),
+    file_thang: Optional[UploadFile] = File(None),
+    file_nghieng_trai: Optional[UploadFile] = File(None),
+    file_nghieng_phai: Optional[UploadFile] = File(None)
 ):
-    """Đăng ký khuôn mặt mới vào hệ sinh thái."""
-    contents = await file.read()
+    """
+    Đăng ký khuôn mặt mới vào hệ sinh thái.
+    Hỗ trợ 2 chế độ:
+    1. Chuẩn eKYC 3 góc (file_thang, file_nghieng_trai, file_nghieng_phai) -> lưu tương ứng hậu tố _thang, _nghieng_trai, _nghieng_phai
+    2. Chế độ đơn ảnh (file kèm suffix tuỳ chọn)
+    """
+    sid = student_id.strip()
+    sname = student_name.strip()
+
+    # 1. Chế độ eKYC 3 góc (Thẳng, Nghiêng Trái, Nghiêng Phải)
+    if file_thang and file_nghieng_trai and file_nghieng_phai:
+        c_thang = await file_thang.read()
+        c_trai = await file_nghieng_trai.read()
+        c_phai = await file_nghieng_phai.read()
+
+        img_thang = cv2.imdecode(np.frombuffer(c_thang, dtype=np.uint8), cv2.IMREAD_COLOR)
+        img_trai = cv2.imdecode(np.frombuffer(c_trai, dtype=np.uint8), cv2.IMREAD_COLOR)
+        img_phai = cv2.imdecode(np.frombuffer(c_phai, dtype=np.uint8), cv2.IMREAD_COLOR)
+
+        if img_thang is None or img_trai is None or img_phai is None:
+            raise HTTPException(400, "Một trong các tệp ảnh 3 góc không hợp lệ.")
+
+        res = pipeline.face_engine.register_faces_3_angles(
+            student_id=sid,
+            student_name=sname,
+            img_thang=img_thang,
+            img_nghieng_trai=img_trai,
+            img_nghieng_phai=img_phai,
+            save_disk=True
+        )
+
+        if not res.get("success"):
+            raise HTTPException(422, res.get("error", "Lỗi nhận diện khuôn mặt khi đăng ký 3 góc."))
+
+        return {
+            "status": "success",
+            "mode": "3_angles_ekyc",
+            "message": res["message"],
+            "total_faces": res["total_faces"]
+        }
+
+    # 2. Chế độ đơn ảnh
+    target_file = file or file_thang
+    if target_file is None:
+        raise HTTPException(400, "Vui lòng cung cấp ảnh khuôn mặt (đơn lẻ hoặc 3 góc eKYC).")
+
+    contents = await target_file.read()
     arr = np.frombuffer(contents, dtype=np.uint8)
     img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
     if img is None:
         raise HTTPException(400, "Tệp ảnh không hợp lệ.")
 
-    ok = pipeline.face_engine.register_face(student_id.strip(), student_name.strip(), img, save_disk=True)
+    ok = pipeline.face_engine.register_face(sid, sname, img, save_disk=True, suffix=suffix or "thang")
     if not ok:
         raise HTTPException(422, "Không tìm thấy khuôn mặt rõ nét trong ảnh cung cấp.")
 
     return {
         "status": "success",
-        "message": f"Đã đăng ký thành công FaceID cho {student_name} ({student_id})",
+        "mode": "single_angle",
+        "message": f"Đã đăng ký thành công FaceID cho {sname} ({sid})",
         "total_faces": len(pipeline.face_engine.known_ids)
     }
 

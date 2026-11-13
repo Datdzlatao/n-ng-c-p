@@ -223,5 +223,77 @@ class FaceVisionService:
 
         return {"status": "error", "message": "Không thể kết nối tới AI Vision Engine để đăng ký khuôn mặt."}
 
+    def enroll_face_3_angles(
+        self,
+        staff_id: str,
+        staff_name: str,
+        thang_bytes: bytes,
+        trai_bytes: bytes,
+        phai_bytes: bytes
+    ) -> dict:
+        """
+        Đăng ký FaceID 3 góc eKYC (Thẳng, Nghiêng Trái, Nghiêng Phải) gửi sang AI Vision Engine.
+        """
+        url = f"{self.base_url}/api/v1/faces/enroll"
+        boundary = "----WebKitFormBoundary7MA4YWxkTrZu0gW"
+
+        body_parts = []
+        body_parts.append(f"--{boundary}\r\nContent-Disposition: form-data; name=\"student_id\"\r\n\r\n{staff_id}\r\n".encode("utf-8"))
+        body_parts.append(f"--{boundary}\r\nContent-Disposition: form-data; name=\"student_name\"\r\n\r\n{staff_name}\r\n".encode("utf-8"))
+
+        # file_thang
+        body_parts.append(f"--{boundary}\r\nContent-Disposition: form-data; name=\"file_thang\"; filename=\"{staff_id}_thang.jpg\"\r\nContent-Type: image/jpeg\r\n\r\n".encode("utf-8"))
+        body_parts.append(thang_bytes)
+        body_parts.append(f"\r\n".encode("utf-8"))
+
+        # file_nghieng_trai
+        body_parts.append(f"--{boundary}\r\nContent-Disposition: form-data; name=\"file_nghieng_trai\"; filename=\"{staff_id}_nghieng_trai.jpg\"\r\nContent-Type: image/jpeg\r\n\r\n".encode("utf-8"))
+        body_parts.append(trai_bytes)
+        body_parts.append(f"\r\n".encode("utf-8"))
+
+        # file_nghieng_phai
+        body_parts.append(f"--{boundary}\r\nContent-Disposition: form-data; name=\"file_nghieng_phai\"; filename=\"{staff_id}_nghieng_phai.jpg\"\r\nContent-Type: image/jpeg\r\n\r\n".encode("utf-8"))
+        body_parts.append(phai_bytes)
+        body_parts.append(f"\r\n--{boundary}--\r\n".encode("utf-8"))
+
+        full_body = b"".join(body_parts)
+
+        try:
+            req = urllib.request.Request(
+                url,
+                data=full_body,
+                headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+                method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                if resp.status == 200:
+                    return json.loads(resp.read().decode("utf-8"))
+        except Exception as e:
+            logger.warning(f"Error enrolling 3-angle faces at {url}: {e}")
+
+        # Local fallback enrollment directly to disk
+        try:
+            import os, cv2, numpy as np
+            faces_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "..", "standalone_ai_engine", "known_faces")
+            os.makedirs(faces_dir, exist_ok=True)
+            clean_name = staff_name.replace(" ", "_")
+
+            for ang, b in [("thang", thang_bytes), ("nghieng_trai", trai_bytes), ("nghieng_phai", phai_bytes)]:
+                arr = np.frombuffer(b, dtype=np.uint8)
+                img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+                if img is not None:
+                    out_path = os.path.join(faces_dir, f"{staff_id}_{clean_name}_{ang}.jpg")
+                    cv2.imwrite(out_path, img)
+
+            return {
+                "status": "success",
+                "message": f"Đã lưu ảnh 3 góc nhân sự {staff_name} vào {faces_dir}",
+                "local_fallback": True
+            }
+        except Exception as fe:
+            logger.debug(f"Direct local enrollment error: {fe}")
+
+        return {"status": "error", "message": "Không thể kết nối tới AI Vision Engine để đăng ký 3 góc khuôn mặt."}
+
 
 face_service = FaceVisionService()

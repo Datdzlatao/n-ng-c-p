@@ -448,38 +448,84 @@ export async function getStaffAttendanceHistory(limit: number = 20): Promise<Att
 /**
  * Register new staff FaceID (Lưu Supabase và gửi Backend)
  */
+export interface EnrollFaceOptions {
+  staffId: string;
+  staffName: string;
+  role?: string;
+  penId?: string;
+  file?: File;
+  fileThang?: File;
+  fileNghiengTrai?: File;
+  fileNghiengPhai?: File;
+}
+
 export async function enrollStaffFace(
-  staffId: string,
-  staffName: string,
-  file: File,
+  staffIdOrOptions: string | EnrollFaceOptions,
+  staffName?: string,
+  file?: File,
   role: string = 'Kỹ thuật viên',
-  penId: string = '123'
+  penId: string = '123',
+  fileNghiengTrai?: File,
+  fileNghiengPhai?: File
 ): Promise<any> {
-  const cleanId = staffId.trim().toUpperCase();
-  const cleanName = staffName.trim();
+  let sId = '';
+  let sName = '';
+  let sRole = role;
+  let sPenId = penId;
+  let fSingle: File | undefined = file;
+  let fThang: File | undefined = undefined;
+  let fTrai: File | undefined = fileNghiengTrai;
+  let fPhai: File | undefined = fileNghiengPhai;
+
+  if (typeof staffIdOrOptions === 'object') {
+    sId = staffIdOrOptions.staffId;
+    sName = staffIdOrOptions.staffName;
+    sRole = staffIdOrOptions.role || 'Kỹ thuật viên';
+    sPenId = staffIdOrOptions.penId || '123';
+    fSingle = staffIdOrOptions.file;
+    fThang = staffIdOrOptions.fileThang;
+    fTrai = staffIdOrOptions.fileNghiengTrai;
+    fPhai = staffIdOrOptions.fileNghiengPhai;
+  } else {
+    sId = staffIdOrOptions;
+    sName = staffName || '';
+    fSingle = file;
+  }
+
+  const cleanId = sId.trim().toUpperCase();
+  const cleanName = sName.trim();
 
   // 1. Lưu ngay vào Supabase bảng staff
   try {
     await supabase.from('staff').upsert({
       id: cleanId,
       name: cleanName,
-      role: role.trim(),
-      pen_id: penId || '123',
+      role: sRole.trim(),
+      pen_id: sPenId || '123',
       created_at: new Date().toISOString(),
     }, { onConflict: 'id' });
   } catch (supaErr) {
     console.error('Error saving new staff to Supabase:', supaErr);
   }
 
-  // 2. Gửi sang Backend API để trích xuất embedding khuôn mặt
+  // 2. Gửi sang Backend API để trích xuất embedding khuôn mặt (3 góc eKYC hoặc đơn lẻ)
   let backendRes: any = null;
   try {
     const formData = new FormData();
     formData.append('staff_id', cleanId);
     formData.append('staff_name', cleanName);
-    formData.append('role', role);
-    formData.append('pen_id', penId);
-    formData.append('file', file);
+    formData.append('role', sRole);
+    formData.append('pen_id', sPenId);
+
+    if (fThang && fTrai && fPhai) {
+      formData.append('file_thang', fThang);
+      formData.append('file_nghieng_trai', fTrai);
+      formData.append('file_nghieng_phai', fPhai);
+    } else if (fSingle) {
+      formData.append('file', fSingle);
+    } else if (fThang) {
+      formData.append('file', fThang);
+    }
 
     const res = await fetch(`${BACKEND_URL}/api/staff/enroll`, {
       method: 'POST',
@@ -494,7 +540,7 @@ export async function enrollStaffFace(
 
   return {
     status: 'success',
-    staff: { id: cleanId, name: cleanName, role, pen_id: penId },
+    staff: { id: cleanId, name: cleanName, role: sRole, pen_id: sPenId },
     backend: backendRes,
   };
 }

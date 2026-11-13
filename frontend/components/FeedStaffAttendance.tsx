@@ -115,17 +115,27 @@ export default function FeedStaffAttendance({
     timestamp: number;
   } | null>(null);
 
-  // Enroll FaceID Modal State
+  // Enroll FaceID eKYC Modal State (3 Angles: Thẳng, Nghiêng Trái, Nghiêng Phải)
   const [isEnrollModalOpen, setIsEnrollModalOpen] = useState(false);
   const [enrollStaffId, setEnrollStaffId] = useState('');
   const [enrollStaffName, setEnrollStaffName] = useState('');
   const [enrollRole, setEnrollRole] = useState('Kỹ thuật viên');
   const [enrollPenId, setEnrollPenId] = useState(currentPenId || '123');
-  const [enrollFile, setEnrollFile] = useState<File | null>(null);
-  const [enrollPreviewUrl, setEnrollPreviewUrl] = useState<string | null>(null);
+
+  const [enrollFileThang, setEnrollFileThang] = useState<File | null>(null);
+  const [enrollFileTrai, setEnrollFileTrai] = useState<File | null>(null);
+  const [enrollFilePhai, setEnrollFilePhai] = useState<File | null>(null);
+
+  const [previewThang, setPreviewThang] = useState<string | null>(null);
+  const [previewTrai, setPreviewTrai] = useState<string | null>(null);
+  const [previewPhai, setPreviewPhai] = useState<string | null>(null);
+
   const [isEnrolling, setIsEnrolling] = useState(false);
   const [enrollModalMsg, setEnrollModalMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const enrollFileInputRef = useRef<HTMLInputElement>(null);
+
+  const fileInputThangRef = useRef<HTMLInputElement>(null);
+  const fileInputTraiRef = useRef<HTMLInputElement>(null);
+  const fileInputPhaiRef = useRef<HTMLInputElement>(null);
 
   // References
   const hardwarePollIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -570,9 +580,9 @@ export default function FeedStaffAttendance({
   };
 
   // ─────────────────────────────────────────────────────────────
-  // ENROLL FACEID
+  // ENROLL FACEID (eKYC 3 GÓC: THẲNG, NGHIÊNG TRÁI, NGHIÊNG PHẢI)
   // ─────────────────────────────────────────────────────────────
-  const handleCaptureEnrollFromServerCamera = async () => {
+  const captureAngleFromServerCamera = async (angle: 'thang' | 'nghieng_trai' | 'nghieng_phai') => {
     try {
       setIsLoading(true);
       const res = await fetch(`${FACE_API_URL}/api/v1/camera/snapshot?overlay=false`);
@@ -580,34 +590,59 @@ export default function FeedStaffAttendance({
         throw new Error('Không thể chụp ảnh từ Camera Server');
       }
       const blob = await res.blob();
-      const file = new File([blob], `${enrollStaffId || 'face'}.jpg`, { type: 'image/jpeg' });
-      setEnrollFile(file);
-      setEnrollPreviewUrl(URL.createObjectURL(blob));
+      const filename = `${enrollStaffId || 'NV'}_${angle}.jpg`;
+      const file = new File([blob], filename, { type: 'image/jpeg' });
+      const previewUrl = URL.createObjectURL(blob);
+
+      if (angle === 'thang') {
+        setEnrollFileThang(file);
+        setPreviewThang(previewUrl);
+      } else if (angle === 'nghieng_trai') {
+        setEnrollFileTrai(file);
+        setPreviewTrai(previewUrl);
+      } else if (angle === 'nghieng_phai') {
+        setEnrollFilePhai(file);
+        setPreviewPhai(previewUrl);
+      }
     } catch (err: any) {
       setEnrollModalMsg({
         type: 'error',
-        text: `Lỗi chụp ảnh từ Camera Server: ${err.message || err}`
+        text: `Lỗi chụp ảnh góc ${angle}: ${err.message || err}`
       });
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleEnrollFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAngleFileChange = (angle: 'thang' | 'nghieng_trai' | 'nghieng_phai', e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setEnrollFile(file);
-    const reader = new FileReader();
-    reader.onload = () => {
-      setEnrollPreviewUrl(reader.result as string);
-    };
-    reader.readAsDataURL(file);
+    const previewUrl = URL.createObjectURL(file);
+
+    if (angle === 'thang') {
+      setEnrollFileThang(file);
+      setPreviewThang(previewUrl);
+    } else if (angle === 'nghieng_trai') {
+      setEnrollFileTrai(file);
+      setPreviewTrai(previewUrl);
+    } else if (angle === 'nghieng_phai') {
+      setEnrollFilePhai(file);
+      setPreviewPhai(previewUrl);
+    }
   };
 
   const handleEnrollSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!enrollStaffId || !enrollStaffName || !enrollFile) {
-      setEnrollModalMsg({ type: 'error', text: 'Vui lòng điền đủ mã nhân viên, họ tên và chọn ảnh.' });
+    if (!enrollStaffId || !enrollStaffName) {
+      setEnrollModalMsg({ type: 'error', text: 'Vui lòng điền đủ mã nhân viên và họ tên.' });
+      return;
+    }
+
+    if (!enrollFileThang || !enrollFileTrai || !enrollFilePhai) {
+      setEnrollModalMsg({
+        type: 'error',
+        text: 'Quy trình eKYC yêu cầu chụp đủ cả 3 góc (Nhìn Thẳng, Nghiêng Trái, Nghiêng Phải) để tối ưu độ chính xác!'
+      });
       return;
     }
 
@@ -615,30 +650,43 @@ export default function FeedStaffAttendance({
     setEnrollModalMsg(null);
 
     try {
-      const res = await enrollStaffFace(
-        enrollStaffId,
-        enrollStaffName,
-        enrollFile,
-        enrollRole,
-        enrollPenId || currentPenId || '123'
-      );
+      await enrollStaffFace({
+        staffId: enrollStaffId,
+        staffName: enrollStaffName,
+        role: enrollRole,
+        penId: enrollPenId || currentPenId || '123',
+        fileThang: enrollFileThang,
+        fileNghiengTrai: enrollFileTrai,
+        fileNghiengPhai: enrollFilePhai
+      });
+
+      try {
+        await reloadStaffFacesAPI();
+      } catch (e) {}
 
       setEnrollModalMsg({
         type: 'success',
-        text: `Đã lưu FaceID thành công cho ${enrollStaffName} (${enrollStaffId})!`
+        text: `🎉 Đã đăng ký thành công FaceID 3 góc eKYC cho ${enrollStaffName} (${enrollStaffId})!`
       });
 
       await fetchInitialData();
       setTimeout(() => {
         setIsEnrollModalOpen(false);
         setEnrollModalMsg(null);
-        setEnrollFile(null);
-        setEnrollPreviewUrl(null);
-      }, 1500);
+        setEnrollStaffId('');
+        setEnrollStaffName('');
+        setEnrollFileThang(null);
+        setEnrollFileTrai(null);
+        setEnrollFilePhai(null);
+        setPreviewThang(null);
+        setPreviewTrai(null);
+        setPreviewPhai(null);
+      }, 2000);
+
     } catch (err: any) {
       setEnrollModalMsg({
         type: 'error',
-        text: err.message || 'Lỗi khi đăng ký khuôn mặt mới.'
+        text: `Lỗi đăng ký FaceID: ${err.message || err}`
       });
     } finally {
       setIsEnrolling(false);
@@ -1400,28 +1448,32 @@ export default function FeedStaffAttendance({
       </div>
 
       {/* ─────────────────────────────────────────────────────────────
-          5. MODAL: ĐĂNG KÝ FACEID MỚI (Thanh lịch & chuẩn form)
+          5. MODAL: ĐĂNG KÝ FACEID eKYC 3 GÓC (Chuẩn Ngân Hàng)
       ───────────────────────────────────────────────────────────── */}
       {isEnrollModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-150">
-          <div className="bg-white rounded-3xl max-w-lg w-full shadow-2xl border border-slate-200 overflow-hidden text-slate-800">
+          <div className="bg-white rounded-3xl max-w-2xl w-full shadow-2xl border border-slate-200 overflow-hidden text-slate-800">
             {/* Modal Header */}
             <div className="px-6 py-4 bg-gradient-to-r from-emerald-600 to-teal-600 text-white flex items-center justify-between">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-xl bg-white/20 flex items-center justify-center">
-                  <UserPlus className="w-4 h-4 text-white" />
+                  <ShieldCheck className="w-4 h-4 text-white" />
                 </div>
                 <div>
-                  <h4 className="font-bold text-sm">Đăng Ký FaceID Nhân Viên Mới</h4>
-                  <p className="text-[11px] text-emerald-100">Lưu dữ liệu nhận diện vào hệ thống</p>
+                  <h4 className="font-bold text-sm">Đăng Ký FaceID eKYC 3 Góc (Chuẩn Ngân Hàng)</h4>
+                  <p className="text-[11px] text-emerald-100">Chụp 3 góc: Thẳng, Nghiêng Trái, Nghiêng Phải để nhận diện chính xác 100%</p>
                 </div>
               </div>
               <button 
                 onClick={() => {
                   setIsEnrollModalOpen(false);
                   setEnrollModalMsg(null);
-                  setEnrollPreviewUrl(null);
-                  setEnrollFile(null);
+                  setEnrollFileThang(null);
+                  setEnrollFileTrai(null);
+                  setEnrollFilePhai(null);
+                  setPreviewThang(null);
+                  setPreviewTrai(null);
+                  setPreviewPhai(null);
                 }}
                 className="p-1 rounded-lg hover:bg-white/20 text-white/80 hover:text-white transition"
               >
@@ -1430,7 +1482,7 @@ export default function FeedStaffAttendance({
             </div>
 
             {/* Modal Body */}
-            <form onSubmit={handleEnrollSubmit} className="p-6 space-y-4">
+            <form onSubmit={handleEnrollSubmit} className="p-6 space-y-4 max-h-[82vh] overflow-y-auto">
               {enrollModalMsg && (
                 <div className={`p-3 rounded-xl text-xs font-semibold flex items-center gap-2 ${
                   enrollModalMsg.type === 'success'
@@ -1494,79 +1546,246 @@ export default function FeedStaffAttendance({
                 </div>
               </div>
 
-              {/* Face Photo Section */}
+              {/* ─────────────────────────────────────────────────────────────
+                  eKYC 3-ANGLE FACE CAPTURE SECTION
+              ───────────────────────────────────────────────────────────── */}
               <div>
-                <label className="text-xs font-bold text-slate-700 block mb-1.5">Ảnh Chân Dung Khuôn Mặt (Chính diện) *</label>
-                
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <span>Ảnh Chân Dung 3 Góc (Chuẩn eKYC Ngân Hàng)</span>
+                    <span className="text-rose-500">*</span>
+                  </label>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                    (enrollFileThang && enrollFileTrai && enrollFilePhai)
+                      ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                      : 'bg-amber-100 text-amber-800 border border-amber-300'
+                  }`}>
+                    {[enrollFileThang, enrollFileTrai, enrollFilePhai].filter(Boolean).length}/3 Góc Đã Chụp
+                  </span>
+                </div>
+
+                {/* Hidden File Inputs */}
                 <input
-                  ref={enrollFileInputRef}
+                  ref={fileInputThangRef}
                   type="file"
                   accept="image/*"
-                  onChange={handleEnrollFileChange}
+                  onChange={(e) => handleAngleFileChange('thang', e)}
+                  className="hidden"
+                />
+                <input
+                  ref={fileInputTraiRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => handleAngleFileChange('nghieng_trai', e)}
+                  className="hidden"
+                />
+                <input
+                  ref={fileInputPhaiRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => handleAngleFileChange('nghieng_phai', e)}
                   className="hidden"
                 />
 
-                <div className="flex flex-col sm:flex-row items-center gap-3 p-3 border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50">
-                  <div className="w-24 h-24 rounded-2xl border border-slate-200 bg-slate-100 flex items-center justify-center overflow-hidden shrink-0 shadow-inner">
-                    {enrollPreviewUrl ? (
-                      <img src={enrollPreviewUrl} alt="Face preview" className="w-full h-full object-cover" />
-                    ) : (
-                      <Users className="w-8 h-8 text-slate-400" />
-                    )}
-                  </div>
+                {/* 3-Angle Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {/* GÓC 1: NHÌN THẲNG */}
+                  <div className={`p-3 rounded-2xl border transition-all ${
+                    enrollFileThang ? 'border-emerald-400 bg-emerald-50/40 shadow-sm' : 'border-slate-200 bg-slate-50'
+                  }`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-[11px] font-bold text-slate-800 flex items-center gap-1">
+                        <span>👤 1. Nhìn Thẳng</span>
+                      </span>
+                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                        enrollFileThang ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-600'
+                      }`}>
+                        {enrollFileThang ? '✓ Đạt' : 'Chưa chụp'}
+                      </span>
+                    </div>
 
-                  <div className="space-y-2 flex-1 w-full">
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => enrollFileInputRef.current?.click()}
-                        className="flex-1 py-2 px-3 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
-                      >
-                        <Upload className="w-3.5 h-3.5" />
-                        <span>Chọn Ảnh</span>
-                      </button>
+                    <div className="w-full aspect-[4/3] rounded-xl border border-slate-200 bg-slate-100 flex items-center justify-center overflow-hidden mb-2 relative shadow-inner">
+                      {previewThang ? (
+                        <img src={previewThang} alt="Góc thẳng" className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="text-center p-2 text-slate-400 space-y-1">
+                          <Users className="w-7 h-7 mx-auto opacity-40" />
+                          <span className="text-[10px] block">Chính diện 0°</span>
+                        </div>
+                      )}
+                      <span className="absolute bottom-1 right-1 bg-slate-900/70 text-slate-200 text-[8px] font-mono px-1 py-0.5 rounded">
+                        _thang.jpg
+                      </span>
+                    </div>
 
+                    <div className="flex gap-1.5">
                       {isCameraActive && (
                         <button
                           type="button"
-                          onClick={handleCaptureEnrollFromServerCamera}
-                          className="flex-1 py-2 px-3 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+                          onClick={() => captureAngleFromServerCamera('thang')}
+                          className="flex-1 py-1.5 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] transition flex items-center justify-center gap-1 shadow-sm cursor-pointer"
+                          title="Chụp từ camera server"
                         >
-                          <Camera className="w-3.5 h-3.5" />
-                          <span>Chụp Từ Camera Server</span>
+                          <Camera className="w-3 h-3" />
+                          <span>Chụp</span>
                         </button>
                       )}
+                      <button
+                        type="button"
+                        onClick={() => fileInputThangRef.current?.click()}
+                        className="flex-1 py-1.5 px-2 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 font-semibold text-[10px] transition flex items-center justify-center gap-1 cursor-pointer"
+                        title="Tải ảnh góc thẳng"
+                      >
+                        <Upload className="w-3 h-3" />
+                        <span>Tải ảnh</span>
+                      </button>
                     </div>
-                    <p className="text-[10px] text-slate-500 leading-relaxed">
-                      💡 Mẹo: Chụp khuôn mặt chính diện, rõ nét để hệ thống trích xuất đặc trưng nhận diện chính xác nhất.
-                    </p>
+                  </div>
+
+                  {/* GÓC 2: NGHIÊNG TRÁI */}
+                  <div className={`p-3 rounded-2xl border transition-all ${
+                    enrollFileTrai ? 'border-emerald-400 bg-emerald-50/40 shadow-sm' : 'border-slate-200 bg-slate-50'
+                  }`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-[11px] font-bold text-slate-800 flex items-center gap-1">
+                        <span>🫲 2. Nghiêng Trái</span>
+                      </span>
+                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                        enrollFileTrai ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-600'
+                      }`}>
+                        {enrollFileTrai ? '✓ Đạt' : 'Chưa chụp'}
+                      </span>
+                    </div>
+
+                    <div className="w-full aspect-[4/3] rounded-xl border border-slate-200 bg-slate-100 flex items-center justify-center overflow-hidden mb-2 relative shadow-inner">
+                      {previewTrai ? (
+                        <img src={previewTrai} alt="Góc nghiêng trái" className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="text-center p-2 text-slate-400 space-y-1">
+                          <Users className="w-7 h-7 mx-auto opacity-40 -scale-x-100" />
+                          <span className="text-[10px] block">Nghiêng trái ~30°</span>
+                        </div>
+                      )}
+                      <span className="absolute bottom-1 right-1 bg-slate-900/70 text-slate-200 text-[8px] font-mono px-1 py-0.5 rounded">
+                        _nghieng_trai.jpg
+                      </span>
+                    </div>
+
+                    <div className="flex gap-1.5">
+                      {isCameraActive && (
+                        <button
+                          type="button"
+                          onClick={() => captureAngleFromServerCamera('nghieng_trai')}
+                          className="flex-1 py-1.5 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] transition flex items-center justify-center gap-1 shadow-sm cursor-pointer"
+                          title="Chụp từ camera server"
+                        >
+                          <Camera className="w-3 h-3" />
+                          <span>Chụp</span>
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => fileInputTraiRef.current?.click()}
+                        className="flex-1 py-1.5 px-2 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 font-semibold text-[10px] transition flex items-center justify-center gap-1 cursor-pointer"
+                        title="Tải ảnh nghiêng trái"
+                      >
+                        <Upload className="w-3 h-3" />
+                        <span>Tải ảnh</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* GÓC 3: NGHIÊNG PHẢI */}
+                  <div className={`p-3 rounded-2xl border transition-all ${
+                    enrollFilePhai ? 'border-emerald-400 bg-emerald-50/40 shadow-sm' : 'border-slate-200 bg-slate-50'
+                  }`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-[11px] font-bold text-slate-800 flex items-center gap-1">
+                        <span>🫱 3. Nghiêng Phải</span>
+                      </span>
+                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                        enrollFilePhai ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-600'
+                      }`}>
+                        {enrollFilePhai ? '✓ Đạt' : 'Chưa chụp'}
+                      </span>
+                    </div>
+
+                    <div className="w-full aspect-[4/3] rounded-xl border border-slate-200 bg-slate-100 flex items-center justify-center overflow-hidden mb-2 relative shadow-inner">
+                      {previewPhai ? (
+                        <img src={previewPhai} alt="Góc nghiêng phải" className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="text-center p-2 text-slate-400 space-y-1">
+                          <Users className="w-7 h-7 mx-auto opacity-40" />
+                          <span className="text-[10px] block">Nghiêng phải ~30°</span>
+                        </div>
+                      )}
+                      <span className="absolute bottom-1 right-1 bg-slate-900/70 text-slate-200 text-[8px] font-mono px-1 py-0.5 rounded">
+                        _nghieng_phai.jpg
+                      </span>
+                    </div>
+
+                    <div className="flex gap-1.5">
+                      {isCameraActive && (
+                        <button
+                          type="button"
+                          onClick={() => captureAngleFromServerCamera('nghieng_phai')}
+                          className="flex-1 py-1.5 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] transition flex items-center justify-center gap-1 shadow-sm cursor-pointer"
+                          title="Chụp từ camera server"
+                        >
+                          <Camera className="w-3 h-3" />
+                          <span>Chụp</span>
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => fileInputPhaiRef.current?.click()}
+                        className="flex-1 py-1.5 px-2 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 font-semibold text-[10px] transition flex items-center justify-center gap-1 cursor-pointer"
+                        title="Tải ảnh nghiêng phải"
+                      >
+                        <Upload className="w-3 h-3" />
+                        <span>Tải ảnh</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
+
+                <p className="text-[10px] text-slate-500 leading-relaxed mt-2.5 bg-slate-100/80 p-2.5 rounded-xl border border-slate-200">
+                  💡 <strong>Quy trình eKYC chuẩn ngân hàng:</strong> Bạn vui lòng chụp đủ cả 3 góc (Nhìn thẳng, Nghiêng trái, Nghiêng phải). Các ảnh sẽ tự động được lưu với hậu tố <code className="text-emerald-700 font-mono">_thang</code>, <code className="text-emerald-700 font-mono">_nghieng_trai</code>, <code className="text-emerald-700 font-mono">_nghieng_phai</code> để AI nhận diện khuôn mặt tức thì ở mọi góc nhìn!
+                </p>
               </div>
 
               {/* Modal Footer */}
               <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
                 <button
                   type="button"
-                  onClick={() => setIsEnrollModalOpen(false)}
+                  onClick={() => {
+                    setIsEnrollModalOpen(false);
+                    setEnrollModalMsg(null);
+                    setEnrollFileThang(null);
+                    setEnrollFileTrai(null);
+                    setEnrollFilePhai(null);
+                    setPreviewThang(null);
+                    setPreviewTrai(null);
+                    setPreviewPhai(null);
+                  }}
                   className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 transition cursor-pointer"
                 >
                   Hủy
                 </button>
                 <button
                   type="submit"
-                  disabled={isEnrolling || !enrollStaffId || !enrollStaffName || !enrollFile}
+                  disabled={isEnrolling || !enrollStaffId || !enrollStaffName || !enrollFileThang || !enrollFileTrai || !enrollFilePhai}
                   className="px-5 py-2.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center gap-2 cursor-pointer"
                 >
                   {isEnrolling ? (
                     <>
                       <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                      <span>Đang lưu...</span>
+                      <span>Đang lưu 3 góc eKYC...</span>
                     </>
                   ) : (
                     <>
                       <CheckCircle2 className="w-3.5 h-3.5" />
-                      <span>Lưu & Kích Hoạt FaceID</span>
+                      <span>Lưu & Kích Hoạt FaceID 3 Góc</span>
                     </>
                   )}
                 </button>

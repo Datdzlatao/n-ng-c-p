@@ -230,34 +230,80 @@ class FaceEngine:
             except Exception as e:
                 print(f"[FACE ENGINE] Lỗi ghi cache: {e}")
 
-    def register_face(self, student_id: str, student_name: str, image_bgr: np.ndarray, save_disk: bool = True) -> bool:
+    def register_face(self, student_id: str, student_name: str, image_bgr: np.ndarray, save_disk: bool = True, suffix: str = "") -> bool:
         emb = self.extract_embedding_from_image(image_bgr)
         if emb is None:
             return False
 
-        if student_id in self.known_ids:
-            idx = self.known_ids.index(student_id)
-            self.known_embeddings[idx] = emb
-            self.known_names[idx] = student_name
+        if save_disk:
+            safe_name = re.sub(r"[^a-zA-Z0-9_-]", "", student_name.replace(" ", "_"))
+            clean_suffix = suffix.strip().lstrip("_")
+            if clean_suffix:
+                out_fn = f"{student_id}_{safe_name}_{clean_suffix}.jpg" if safe_name else f"{student_id}_{clean_suffix}.jpg"
+            else:
+                out_fn = f"{student_id}_{safe_name}.jpg" if safe_name else f"{student_id}.jpg"
+            
+            cv2.imwrite(os.path.join(self.faces_dir, out_fn), image_bgr)
+            try:
+                self.load_known_faces(force_reload=True)
+            except Exception as e:
+                print(f"[FACE ENGINE] Lỗi nạp lại cache: {e}")
         else:
             self.known_ids.append(student_id)
             self.known_names.append(student_name)
             self.known_embeddings.append(emb)
 
+        return True
+
+    def register_faces_3_angles(
+        self,
+        student_id: str,
+        student_name: str,
+        img_thang: np.ndarray,
+        img_nghieng_trai: np.ndarray,
+        img_nghieng_phai: np.ndarray,
+        save_disk: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Đăng ký FaceID 3 góc theo chuẩn eKYC ngân hàng:
+        - thang: Chính diện
+        - nghieng_trai: Nghiêng góc trái ~30 độ
+        - nghieng_phai: Nghiêng góc phải ~30 độ
+        """
+        angles = {
+            "thang": img_thang,
+            "nghieng_trai": img_nghieng_trai,
+            "nghieng_phai": img_nghieng_phai
+        }
+
+        # 1. Kiểm tra trích xuất đặc trưng của cả 3 ảnh
+        embeddings = {}
+        for ang_name, img in angles.items():
+            emb = self.extract_embedding_from_image(img)
+            if emb is None:
+                return {
+                    "success": False,
+                    "error": f"Không tìm thấy khuôn mặt rõ nét ở góc '{ang_name}'."
+                }
+            embeddings[ang_name] = emb
+
+        # 2. Lưu các tệp ảnh với hậu tố tương ứng
         if save_disk:
             safe_name = re.sub(r"[^a-zA-Z0-9_-]", "", student_name.replace(" ", "_"))
-            out_fn = f"{student_id}_{safe_name}.jpg" if safe_name else f"{student_id}.jpg"
-            cv2.imwrite(os.path.join(self.faces_dir, out_fn), image_bgr)
-            try:
-                np.savez_compressed(
-                    self.cache_path,
-                    ids=np.array(self.known_ids),
-                    names=np.array(self.known_names),
-                    embeddings=np.array(self.known_embeddings)
-                )
-            except Exception:
-                pass
-        return True
+            for ang_name, img in angles.items():
+                out_fn = f"{student_id}_{safe_name}_{ang_name}.jpg" if safe_name else f"{student_id}_{ang_name}.jpg"
+                out_path = os.path.join(self.faces_dir, out_fn)
+                cv2.imwrite(out_path, img)
+
+            # 3. Reload toàn bộ để đồng bộ cache .npz
+            self.load_known_faces(force_reload=True)
+
+        return {
+            "success": True,
+            "message": f"Đã đăng ký thành công 3 góc khuôn mặt cho {student_name} ({student_id})",
+            "angles": list(angles.keys()),
+            "total_faces": len(self.known_ids)
+        }
 
     def detect_locations(self, frame: np.ndarray) -> List[Tuple[int, int, int, int]]:
         if frame is None or frame.size == 0:

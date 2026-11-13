@@ -645,33 +645,56 @@ async def enroll_staff_face_api(
     staff_name: str = Form(...),
     pen_id: str = Form("123"),
     role: str = Form("Kỹ thuật viên"),
-    file: UploadFile = File(...),
+    file: Optional[UploadFile] = File(None),
+    file_thang: Optional[UploadFile] = File(None),
+    file_nghieng_trai: Optional[UploadFile] = File(None),
+    file_nghieng_phai: Optional[UploadFile] = File(None),
 ):
     """
     Đăng ký FaceID mới cho nhân viên: Cập nhật cơ sở dữ liệu và tải khuôn mặt vào AI Vision Engine.
+    Hỗ trợ cả chế độ chuẩn eKYC 3 góc (thẳng, nghiêng trái, nghiêng phải) và chế độ đơn ảnh.
     """
     try:
-        contents = await file.read()
+        sid = staff_id.strip()
+        sname = staff_name.strip()
+
         # 1. Đăng ký vào cơ sở dữ liệu nhân sự
         created = staff_repo.create_staff(
-            staff_id=staff_id.strip(),
-            name=staff_name.strip(),
+            staff_id=sid,
+            name=sname,
             role=role.strip(),
             pen_id=pen_id.strip(),
         )
 
-        # 2. Gửi ảnh sang Standalone AI Vision Engine
-        vision_resp = face_service.enroll_face(
-            staff_id=staff_id.strip(),
-            staff_name=staff_name.strip(),
-            image_bytes=contents,
-            filename=file.filename or "face.jpg",
-        )
+        # 2. Xử lý ảnh khuôn mặt
+        if file_thang and file_nghieng_trai and file_nghieng_phai:
+            c_thang = await file_thang.read()
+            c_trai = await file_nghieng_trai.read()
+            c_phai = await file_nghieng_phai.read()
+
+            vision_resp = face_service.enroll_face_3_angles(
+                staff_id=sid,
+                staff_name=sname,
+                thang_bytes=c_thang,
+                trai_bytes=c_trai,
+                phai_bytes=c_phai
+            )
+        else:
+            target = file or file_thang
+            if not target:
+                raise HTTPException(status_code=400, detail="Vui lòng cung cấp ít nhất 1 ảnh khuôn mặt hoặc đủ 3 góc eKYC.")
+            contents = await target.read()
+            vision_resp = face_service.enroll_face(
+                staff_id=sid,
+                staff_name=sname,
+                image_bytes=contents,
+                filename=target.filename or f"{sid}_thang.jpg",
+            )
 
         await ws_manager.broadcast("staff_update", {"action": "enroll", "staff": created})
         return {
             "status": "success",
-            "message": f"Đã đăng ký FaceID thành công cho nhân sự {staff_name} ({staff_id})",
+            "message": f"Đã đăng ký FaceID thành công cho nhân sự {sname} ({sid})",
             "staff": created,
             "vision_engine": vision_resp,
         }
