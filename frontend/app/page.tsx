@@ -553,6 +553,18 @@ export default function Home() {
           if (activePen) await loadPenData(activePen);
         }
       )
+      // I. staff_attendance: Điểm danh nhân sự realtime từ Supabase
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'staff_attendance' },
+        (payload: any) => {
+          const newAtt = payload.new;
+          if (newAtt) {
+            const actionText = newAtt.check_type === 'check_out' ? 'tan ca' : 'vào ca';
+            showRealtimeNotification('staff', `👤 Nhân sự ${newAtt.staff_name || newAtt.staff_id} đã ${actionText} (${newAtt.pen_id || 'Trang trại'})`);
+          }
+        }
+      )
       .subscribe((status) => {
         console.log('📡 Full Database Realtime Subscription Status:', status);
       });

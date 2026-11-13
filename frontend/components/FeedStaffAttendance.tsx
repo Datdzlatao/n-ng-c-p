@@ -28,8 +28,11 @@ import {
   ArrowRight,
   ChevronRight,
   RotateCcw,
-  Check
+  Check,
+  Shield,
+  Info
 } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 import { 
   BACKEND_URL,
   FACE_API_URL,
@@ -53,18 +56,19 @@ interface FeedStaffAttendanceProps {
   onNotification?: (title: string, desc: string) => void;
 }
 
+// Cố định quy chuẩn trang phục bảo hộ chuẩn nông trại (giống image.jpg/png)
+// -1 = Chuẩn an toàn sinh học: Khẩu trang y tế + Áo xanh bảo hộ + Quần tối màu
+const FIXED_UNIFORM_RULE = -1;
+
 export default function FeedStaffAttendance({
   currentPenId,
   penName,
   onNotification,
 }: FeedStaffAttendanceProps) {
-  // Main Tab: 'attendance' (FaceID 24/7) vs 'uniform' (Quét toàn thân & kiểm tra đồng phục)
-  const [activeTab, setActiveTab] = useState<'attendance' | 'uniform'>('attendance');
-
-  // Quy Trình 2 Bước Bắt Buộc (An Toàn Sinh Học):
-  // Bước 1 ('step1_face'): Nhận diện mặt (Không đeo khẩu trang) -> Ghi nhớ nhân sự A
-  // Bước 2 ('step2_uniform'): Quét trang phục & Khẩu trang (Bắt buộc đeo khẩu trang) khi bấm Bước tiếp theo
-  // Hoàn tất ('completed'): Chúc mừng và tự động sẵn sàng cho nhân viên tiếp theo
+  // Quy trình 2 bước bắt buộc:
+  // 'step1_face': Nhận diện khuôn mặt (FaceID - bỏ khẩu trang)
+  // 'step2_uniform': Quét trang phục & khẩu trang y tế chuẩn nông trại
+  // 'completed': Chúc mừng hoàn tất và đếm ngược chuyển nhân sự kế tiếp
   const [checkinStep, setCheckinStep] = useState<'step1_face' | 'step2_uniform' | 'completed'>('step1_face');
   const [identifiedStaff, setIdentifiedStaff] = useState<{
     staffId: string;
@@ -73,19 +77,20 @@ export default function FeedStaffAttendance({
     isReal: boolean;
     detectedAt?: number;
   } | null>(null);
+
   const [autoResetTimer, setAutoResetTimer] = useState<number | null>(null);
   const [isFinalizingCheckin, setIsFinalizingCheckin] = useState<boolean>(false);
   const autoResetIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const step2HoldCountRef = useRef<number>(0);
 
-  // Camera Source Mode: 'webcam' (Browser Live AI) vs 'hardware' (Server MJPEG Stream 30FPS)
+  // Camera Mode: 'webcam' (Browser Live AI) vs 'hardware' (Server MJPEG Stream)
   const [cameraMode, setCameraMode] = useState<'webcam' | 'hardware'>('webcam');
 
   // Staff & Attendance State
   const [staffList, setStaffList] = useState<any[]>([]);
   const [attendanceLogs, setAttendanceLogs] = useState<any[]>([]);
   const [selectedStaffId, setSelectedStaffId] = useState<string>('');
-  const [checkType, setCheckType] = useState<'check_in' | 'check_out' | 'instant'>('check_in');
+  const [checkType, setCheckType] = useState<'check_in' | 'check_out'>('check_in');
   const [isLoading, setIsLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -133,21 +138,37 @@ export default function FeedStaffAttendance({
   const liveLoopIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const hardwarePollIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const isProcessingFrameRef = useRef<boolean>(false);
-  const bannerTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const frameCountRef = useRef<number>(0);
   const lastFpsCalcTimeRef = useRef<number>(performance.now());
-  const lastHardwareCheckinTimeRef = useRef<Record<string, number>>({});
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const uniformFileInputRef = useRef<HTMLInputElement | null>(null);
-
-  // Uniform Inspection Rule
-  const [uniformRuleWeekday, setUniformRuleWeekday] = useState<number>(-1);
 
   // Initial Data
   useEffect(() => {
     fetchInitialData();
     checkEngine();
   }, [currentPenId]);
+
+  // Lắng nghe thay đổi trực tiếp từ Supabase bảng staff_attendance theo thời gian thực
+  useEffect(() => {
+    const channel = supabase
+      .channel('staff_attendance_realtime_feed')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'staff_attendance' },
+        async () => {
+          try {
+            const logs = await getStaffAttendanceHistory(20);
+            setAttendanceLogs(logs);
+          } catch (e) {}
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   const checkEngine = async () => {
     const health = await getVisionHealth();
@@ -173,7 +194,7 @@ export default function FeedStaffAttendance({
     }
   };
 
-  // Web Audio Synthetic Chime on Successful Face Recognition
+  // Synthetic Audio Chime on Successful Verification
   const playSuccessChime = useCallback(() => {
     try {
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
@@ -182,8 +203,8 @@ export default function FeedStaffAttendance({
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.type = 'sine';
-      osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
-      osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.15); // A5
+      osc.frequency.setValueAtTime(587.33, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.15);
       gain.gain.setValueAtTime(0.18, ctx.currentTime);
       gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.35);
       osc.connect(gain);
@@ -191,18 +212,17 @@ export default function FeedStaffAttendance({
       osc.start();
       osc.stop(ctx.currentTime + 0.35);
     } catch (e) {
-      // Audio autoplay blocked or unsupported
+      // Audio autoplay blocked
     }
   }, []);
 
   // ─────────────────────────────────────────────────────────────
-  // WEBCAM CONTROLS (Client-Side HTML5 Live Stream)
+  // WEBCAM CONTROLS
   // ─────────────────────────────────────────────────────────────
   const startCamera = async () => {
     try {
       setStatusMessage(null);
 
-      // Release server hardware camera first if it was locking /dev/video0
       try {
         await stopCameraDeviceAPI();
         await new Promise(r => setTimeout(r, 200));
@@ -226,10 +246,9 @@ export default function FeedStaffAttendance({
       }
     } catch (err: any) {
       console.warn('Webcam getUserMedia error:', err);
-      // Auto fallback to Server Camera mode if browser cannot open webcam (e.g. device busy or headless)
       setStatusMessage({
         type: 'error',
-        text: `Máy ảnh trên trình duyệt không mở được (${err.name || 'đang bận'}). Tự động chuyển sang máy ảnh chuồng trại...`
+        text: `Không thể mở máy ảnh trên thiết bị (${err.name || 'đang bận'}). Đang chuyển sang máy ảnh chuồng...`
       });
       switchToHardwareMode();
     }
@@ -260,23 +279,36 @@ export default function FeedStaffAttendance({
     setLiveFaces([]);
   };
 
+  const togglePauseLive = () => {
+    setIsLivePaused(prev => !prev);
+    if (!isLivePaused) {
+      clearOverlayCanvas();
+    }
+  };
+
+  const clearOverlayCanvas = () => {
+    const canvas = overlayCanvasRef.current;
+    if (canvas) {
+      const ctx = canvas.getContext('2d');
+      if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+  };
+
   // ─────────────────────────────────────────────────────────────
-  // 2-STEP PROTOCOL CONTROLS & HANDLERS (FACEID -> UNIFORM)
+  // 2-STEP PROTOCOL CONTROLS & COMPLETION
   // ─────────────────────────────────────────────────────────────
   const goToStep2 = () => {
     if (!identifiedStaff) return;
     setCheckinStep('step2_uniform');
-    setActiveTab('uniform');
     step2HoldCountRef.current = 0;
     setStatusMessage({
       type: 'success',
-      text: `Chuyển sang Bước 2: Quét trang phục & khẩu trang bắt buộc cho ${identifiedStaff.staffName}.`
+      text: `Bước 2: Quét trang phục bảo hộ & khẩu trang y tế cho ${identifiedStaff.staffName}.`
     });
   };
 
   const goBackToStep1 = () => {
     setCheckinStep('step1_face');
-    setActiveTab('attendance');
     step2HoldCountRef.current = 0;
   };
 
@@ -291,7 +323,6 @@ export default function FeedStaffAttendance({
     setUniformResult(null);
     setLiveSuccessBanner(null);
     step2HoldCountRef.current = 0;
-    setActiveTab('attendance');
   };
 
   const handleFinalizeTwoStepCheckIn = useCallback(async (staff: any, uniformData: any) => {
@@ -299,12 +330,15 @@ export default function FeedStaffAttendance({
     setIsFinalizingCheckin(true);
     try {
       const maskColor = uniformData?.mask?.mask_color === 'blue' ? 'xanh y tế' : (uniformData?.mask?.mask_color || 'y tế');
-      const noteMsg = `Vào ca thành công (Quy trình 2 bước: Nhận diện khuôn mặt + Khẩu trang ${maskColor} & Áo ${uniformData?.shirt_color || 'bảo hộ'} + Quần ${uniformData?.pants_color || 'tối màu'})`;
+      const noteMsg = `Vào ca chuẩn nông trại: Khẩu trang ${maskColor} + Áo xanh bảo hộ + Quần tối màu`;
 
       await checkInStaff({
         staffId: staff.staffId,
+        staffName: staff.staffName,
         penId: currentPenId || '123',
         checkType,
+        confidence: staff.confidence,
+        isReal: staff.isReal,
         note: noteMsg
       });
 
@@ -318,13 +352,13 @@ export default function FeedStaffAttendance({
       });
 
       if (onNotification) {
-        onNotification('Vào Ca Thành Công', `🎉 ${staff.staffName} (${staff.staffId}) đã hoàn thành 2 bước đạt chuẩn an toàn sinh học!`);
+        onNotification('Vào Ca Thành Công', `🎉 ${staff.staffName} (${staff.staffId}) đã hoàn tất quy trình an toàn sinh học!`);
       }
 
       getStaffAttendanceHistory(20).then(setAttendanceLogs).catch(() => {});
 
-      // Đếm ngược 8 giây tự động sẵn sàng đón nhân sự tiếp theo
-      let count = 8;
+      // Tự động đếm ngược 6 giây sẵn sàng cho nhân sự tiếp theo
+      let count = 6;
       setAutoResetTimer(count);
       if (autoResetIntervalRef.current) clearInterval(autoResetIntervalRef.current);
       autoResetIntervalRef.current = setInterval(() => {
@@ -351,29 +385,10 @@ export default function FeedStaffAttendance({
     }
   }, [currentPenId, checkType, playSuccessChime, onNotification, isFinalizingCheckin]);
 
-  const togglePauseLive = () => {
-    setIsLivePaused(prev => !prev);
-    if (!isLivePaused) {
-      clearOverlayCanvas();
-    }
-  };
-
-  const clearOverlayCanvas = () => {
-    const canvas = overlayCanvasRef.current;
-    if (canvas) {
-      const ctx = canvas.getContext('2d');
-      if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
-    }
-  };
-
   // ─────────────────────────────────────────────────────────────
   // LIVE CANVAS HUD RENDERING ENGINE
   // ─────────────────────────────────────────────────────────────
-  const renderLiveHud = useCallback((
-    faces: any[],
-    uniform: any,
-    currentTab: 'attendance' | 'uniform'
-  ) => {
+  const renderLiveHud = useCallback((faces: any[], uniform: any, currentStep: string) => {
     const canvas = overlayCanvasRef.current;
     const video = videoRef.current;
     if (!canvas || !video) return;
@@ -381,7 +396,6 @@ export default function FeedStaffAttendance({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Match canvas pixel buffer to actual video resolution
     const vw = video.videoWidth || 640;
     const vh = video.videoHeight || 480;
     if (canvas.width !== vw || canvas.height !== vh) {
@@ -391,12 +405,11 @@ export default function FeedStaffAttendance({
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // Coordinate conversion helper (Selfie mirrored video mode)
     const getX = (origX: number, origW: number) => {
       return vw - (origX + origW);
     };
 
-    // 1. Draw Face Detection Boxes
+    // 1. Draw Face Detection Boxes (Ưu tiên rõ nét ở Bước 1)
     faces.forEach((f) => {
       if (!f.location) return;
       const [top, right, bottom, left] = f.location;
@@ -410,25 +423,25 @@ export default function FeedStaffAttendance({
       const isReal = f.liveness ? f.liveness.is_real : true;
       const confPercent = Math.round((f.confidence || 0) * 100);
 
-      let strokeColor = '#10b981'; // Green: Known & Real
+      let strokeColor = '#10b981'; // Xanh lá: Hợp lệ & người thật
       let tagBg = '#065f46';
-      let labelText = `${f.name || 'Nhân sự'} (${sid || ''}) [${confPercent}%]`;
+      let labelText = `${f.name || 'Nhân sự'} (${sid || ''}) • ${confPercent}%`;
 
       if (!isReal) {
-        strokeColor = '#ef4444'; // Red: Spoof
+        strokeColor = '#ef4444';
         tagBg = '#991b1b';
         labelText = `⚠️ CẢNH BÁO: ẢNH GIẢ MẠO`;
       } else if (!isKnown) {
-        strokeColor = '#f59e0b'; // Amber: Unknown
+        strokeColor = '#f59e0b';
         tagBg = '#92400e';
         labelText = `NGƯỜI LẠ [${confPercent}%]`;
       }
 
-      // Draw Sci-Fi Corner Brackets
+      // Khung viền phong cách công nghệ
       ctx.lineWidth = 3;
       ctx.strokeStyle = strokeColor;
       ctx.shadowColor = strokeColor;
-      ctx.shadowBlur = 8;
+      ctx.shadowBlur = 6;
 
       const cornerLen = Math.min(20, boxW / 4, boxH / 4);
       // Top-Left
@@ -459,13 +472,14 @@ export default function FeedStaffAttendance({
       ctx.lineTo(boxX + boxW, boxY + boxH - cornerLen);
       ctx.stroke();
 
-      // Bounding Box Inner Tint
       ctx.shadowBlur = 0;
-      ctx.fillStyle = isReal ? (isKnown ? 'rgba(16, 185, 129, 0.08)' : 'rgba(245, 158, 11, 0.08)') : 'rgba(239, 68, 68, 0.15)';
+      ctx.fillStyle = isReal 
+        ? (isKnown ? 'rgba(16, 185, 129, 0.08)' : 'rgba(245, 158, 11, 0.08)') 
+        : 'rgba(239, 68, 68, 0.15)';
       ctx.fillRect(boxX, boxY, boxW, boxH);
 
-      // Label Tag Pill
-      ctx.font = 'bold 12px Inter, sans-serif';
+      // Nhãn tên
+      ctx.font = '600 12px Inter, sans-serif';
       const textMetrics = ctx.measureText(labelText);
       const pillW = textMetrics.width + 16;
       const pillH = 22;
@@ -480,7 +494,7 @@ export default function FeedStaffAttendance({
       ctx.fillText(labelText, boxX + 8, pillY + 15);
     });
 
-    // 2. Draw Uniform Inspection Boxes
+    // 2. Draw Uniform Inspection Boxes (Khi ở Bước 2)
     if (uniform && uniform.person_detected) {
       // Body Box
       if (uniform.body_box) {
@@ -496,8 +510,7 @@ export default function FeedStaffAttendance({
         ctx.strokeRect(bodyX, bodyY, bw, bh);
         ctx.setLineDash([]);
 
-        // Body Tag Pill
-        const bodyTag = `TOÀN THÂN: ${isOk ? '✅ ĐẠT ĐỒNG PHỤC' : '❌ VI PHẠM'}`;
+        const bodyTag = `TOÀN THÂN: ${isOk ? '✓ ĐẠT ĐỒNG PHỤC' : '✗ CHƯA ĐẠT'}`;
         ctx.font = 'bold 11px Inter, sans-serif';
         const btw = ctx.measureText(bodyTag).width + 12;
         ctx.fillStyle = isOk ? '#065f46' : '#881337';
@@ -508,17 +521,17 @@ export default function FeedStaffAttendance({
         ctx.fillText(bodyTag, bodyX + 6, Math.max(4, bodyY - 20) + 13);
       }
 
-      // Shirt Box
+      // Shirt Box (Áo xanh bảo hộ)
       if (uniform.shirt_box) {
         const [sx, sy, sw, sh] = uniform.shirt_box;
         const shirtX = getX(sx, sw);
-        const shirtColor = '#06b6d4'; // Cyan
+        const shirtColor = '#06b6d4';
 
         ctx.lineWidth = 2;
         ctx.strokeStyle = shirtColor;
         ctx.strokeRect(shirtX, sy, sw, sh);
 
-        const shirtTag = `👔 ÁO: ${uniform.shirt_color || 'N/A'} (${Math.round((uniform.shirt_ratio || 0) * 100)}%)`;
+        const shirtTag = `👔 ÁO XANH: ${uniform.shirt_color || 'N/A'}`;
         ctx.font = 'bold 11px Inter, sans-serif';
         const stw = ctx.measureText(shirtTag).width + 10;
         ctx.fillStyle = '#164e63';
@@ -529,17 +542,17 @@ export default function FeedStaffAttendance({
         ctx.fillText(shirtTag, shirtX + 5, sy + 16);
       }
 
-      // Pants Box
+      // Pants Box (Quần tối màu)
       if (uniform.pants_box) {
         const [px, py, pw, ph] = uniform.pants_box;
         const pantsX = getX(px, pw);
-        const pantsColor = '#f59e0b'; // Amber
+        const pantsColor = '#f59e0b';
 
         ctx.lineWidth = 2;
         ctx.strokeStyle = pantsColor;
         ctx.strokeRect(pantsX, py, pw, ph);
 
-        const pantsTag = `👖 QUẦN: ${uniform.pants_color || 'N/A'} (${Math.round((uniform.pants_ratio || 0) * 100)}%)`;
+        const pantsTag = `👖 QUẦN TỐI: ${uniform.pants_color || 'N/A'}`;
         ctx.font = 'bold 11px Inter, sans-serif';
         const ptw = ctx.measureText(pantsTag).width + 10;
         ctx.fillStyle = '#78350f';
@@ -550,7 +563,7 @@ export default function FeedStaffAttendance({
         ctx.fillText(pantsTag, pantsX + 5, py + 16);
       }
 
-      // 4. Mask Box (Khẩu trang y tế - Chuẩn image.png)
+      // Mask Box (Khẩu trang y tế - Chuẩn image.png/jpg)
       if (uniform.mask && uniform.mask.mask_box) {
         const [mx, my, mw, mh] = uniform.mask.mask_box;
         const maskX = getX(mx, mw);
@@ -590,7 +603,6 @@ export default function FeedStaffAttendance({
       return;
     }
 
-    // Capture small lightweight frame offscreen (480x360 JPEG 65% for ultra-fast processing)
     const offscreenCanvas = document.createElement('canvas');
     offscreenCanvas.width = 480;
     offscreenCanvas.height = 360;
@@ -609,12 +621,12 @@ export default function FeedStaffAttendance({
         }
         const b64 = offscreenCanvas.toDataURL('image/jpeg', 0.65);
 
-        // Gửi tới API Live AI Scan (autoCheckin=false để giao diện kiểm soát chặt chẽ quy trình 2 bước)
+        // Luôn sử dụng FIXED_UNIFORM_RULE = -1 (mặc định chuẩn nông trại giống image.jpg/png)
         const res = await liveScanStaffAPI({
           imageBase64: b64,
           penId: currentPenId || '123',
           checkType,
-          weekday: uniformRuleWeekday,
+          weekday: FIXED_UNIFORM_RULE,
           autoCheckin: false,
           returnAnnotated: false
         });
@@ -622,7 +634,6 @@ export default function FeedStaffAttendance({
         const dt = Math.round(performance.now() - t0);
         setLiveLatencyMs(dt);
 
-        // Calculate running FPS
         frameCountRef.current += 1;
         const now = performance.now();
         if (now - lastFpsCalcTimeRef.current >= 1000) {
@@ -639,8 +650,7 @@ export default function FeedStaffAttendance({
           setUniformResult(res.uniform);
         }
 
-        // BƯỚC 1: XÁC THỰC DANH TÍNH KHUÔN MẶT (BỎ KHẨU TRANG)
-        // Hệ thống phát hiện khuôn mặt hợp lệ -> Ghi nhớ danh tính nhân sự A
+        // BƯỚC 1: XÁC THỰC DANH TÍNH KHUÔN MẶT
         if (checkinStep === 'step1_face' && !identifiedStaff) {
           const valid = faces.find((f: any) => {
             const sid = f.student_id || f.staff_id || f.id;
@@ -659,13 +669,12 @@ export default function FeedStaffAttendance({
             setIdentifiedStaff(staffObj);
             setSelectedStaffId(sid);
             if (onNotification) {
-              onNotification('Xác thực khuôn mặt', `✅ Đã nhận diện ${staffObj.staffName}. Vui lòng bấm [Bước tiếp theo] để quét trang phục!`);
+              onNotification('Xác thực khuôn mặt', `✅ Đã nhận diện ${staffObj.staffName}. Vui lòng bấm [Quét Trang Phục & Khẩu Trang]!`);
             }
           }
         }
 
-        // BƯỚC 2: QUÉT TRANG PHỤC & KHẨU TRANG (BẮT BUỘC ĐEO KHẨU TRANG)
-        // Khi nhân sự A đã đeo khẩu trang và đạt chuẩn đồng phục (áo xanh, quần tối màu)
+        // BƯỚC 2: QUÉT TRANG PHỤC & KHẨU TRANG
         if (checkinStep === 'step2_uniform' && identifiedStaff && !isFinalizingCheckin) {
           if (res.uniform && res.uniform.is_correct) {
             step2HoldCountRef.current += 1;
@@ -677,17 +686,15 @@ export default function FeedStaffAttendance({
           }
         }
 
-        // 3. Render Canvas HUD Overlay
-        renderLiveHud(faces, res.uniform, activeTab);
+        renderLiveHud(faces, res.uniform, checkinStep);
 
       } catch (err) {
-        // Drop failed frame silently to maintain live smoothness
+        // Drop failed frame silently
       } finally {
         isProcessingFrameRef.current = false;
       }
     };
 
-    // Run continuous loop every 260ms (~3.8 FPS live AI inference)
     liveLoopIntervalRef.current = setInterval(runLiveScanTick, 260);
 
     return () => {
@@ -696,13 +703,25 @@ export default function FeedStaffAttendance({
         liveLoopIntervalRef.current = null;
       }
     };
-  }, [isCameraActive, isLivePaused, cameraMode, checkType, currentPenId, uniformRuleWeekday, activeTab, playSuccessChime, renderLiveHud, onNotification, checkinStep, identifiedStaff, isFinalizingCheckin, handleFinalizeTwoStepCheckIn]);
+  }, [
+    isCameraActive, 
+    isLivePaused, 
+    cameraMode, 
+    checkType, 
+    currentPenId, 
+    playSuccessChime, 
+    renderLiveHud, 
+    onNotification, 
+    checkinStep, 
+    identifiedStaff, 
+    isFinalizingCheckin, 
+    handleFinalizeTwoStepCheckIn
+  ]);
 
   // ─────────────────────────────────────────────────────────────
-  // HARDWARE SERVER CAMERA MODE (MJPEG Stream + Telemetry Polling)
+  // HARDWARE SERVER CAMERA MODE
   // ─────────────────────────────────────────────────────────────
   const switchToHardwareMode = async () => {
-    // Stop browser webcam first
     if (mediaStreamRef.current) {
       mediaStreamRef.current.getTracks().forEach(track => track.stop());
       mediaStreamRef.current = null;
@@ -721,7 +740,7 @@ export default function FeedStaffAttendance({
     setHardwareStreamUrl(`${FACE_API_URL}/api/v1/camera/video_feed?overlay=true&t=${newKey}`);
 
     try {
-      await startCameraDeviceAPI('0', uniformRuleWeekday);
+      await startCameraDeviceAPI('0', FIXED_UNIFORM_RULE);
     } catch (e) {
       console.warn('Hardware camera start warning:', e);
     }
@@ -733,7 +752,6 @@ export default function FeedStaffAttendance({
     startCamera();
   };
 
-  // Poll hardware telemetry when in hardware mode
   useEffect(() => {
     if (cameraMode !== 'hardware' || !isCameraActive) {
       if (hardwarePollIntervalRef.current) {
@@ -748,37 +766,29 @@ export default function FeedStaffAttendance({
         const telemetry = await getCameraLatestTelemetryAPI();
         if (telemetry) {
           setLiveScanFps(telemetry.capture_fps || 0);
-          setLiveLatencyMs(Math.round(telemetry.process_time_ms || 0));
-          if (telemetry.faces) setLiveFaces(telemetry.faces);
-          if (telemetry.uniform) setUniformResult(telemetry.uniform);
-
-          // BƯỚC 1: NHẬN DIỆN MẶT TRÊN CAMERA HARDWARE (BỎ KHẨU TRANG)
-          if (checkinStep === 'step1_face' && !identifiedStaff && telemetry.faces && telemetry.faces.length > 0) {
-            const valid = telemetry.faces.find((f: any) => {
-              const sid = f.student_id || f.staff_id || f.id;
-              return sid && sid !== 'UNKNOWN' && (f.confidence || 0) >= 0.55 && (f.liveness ? f.liveness.is_real : true);
-            });
-            if (valid) {
-              playSuccessChime();
-              const sid = valid.student_id || valid.staff_id || valid.id;
-              setIdentifiedStaff({
-                staffId: sid,
-                staffName: valid.name || 'Nhân sự',
-                confidence: valid.confidence || 0.95,
-                isReal: valid.liveness ? valid.liveness.is_real : true,
-                detectedAt: Date.now()
-              });
-              setSelectedStaffId(sid);
-            }
+          if (telemetry.uniform) {
+            setUniformResult(telemetry.uniform);
           }
-
-          // BƯỚC 2: QUÉT TRANG PHỤC & KHẨU TRANG TRÊN CAMERA HARDWARE (BẮT BUỘC)
-          if (checkinStep === 'step2_uniform' && identifiedStaff && telemetry.uniform?.is_correct && !isFinalizingCheckin) {
-            handleFinalizeTwoStepCheckIn(identifiedStaff, telemetry.uniform);
+          if (telemetry.faces && telemetry.faces.length > 0) {
+            setLiveFaces(telemetry.faces);
+            if (checkinStep === 'step1_face' && !identifiedStaff) {
+              const vf = telemetry.faces.find((f: any) => f.student_id && f.student_id !== 'UNKNOWN');
+              if (vf) {
+                playSuccessChime();
+                setIdentifiedStaff({
+                  staffId: vf.student_id,
+                  staffName: vf.name || 'Nhân sự',
+                  confidence: vf.confidence || 0.95,
+                  isReal: true,
+                  detectedAt: Date.now()
+                });
+                setSelectedStaffId(vf.student_id);
+              }
+            }
           }
         }
       } catch (e) {}
-    }, 400);
+    }, 600);
 
     return () => {
       if (hardwarePollIntervalRef.current) {
@@ -786,9 +796,11 @@ export default function FeedStaffAttendance({
         hardwarePollIntervalRef.current = null;
       }
     };
-  }, [cameraMode, isCameraActive, activeTab, checkType, currentPenId, playSuccessChime, checkinStep, identifiedStaff, isFinalizingCheckin, handleFinalizeTwoStepCheckIn]);
+  }, [cameraMode, isCameraActive, checkinStep, identifiedStaff, playSuccessChime]);
 
-  // Manual 1-click check-in
+  // ─────────────────────────────────────────────────────────────
+  // MANUAL CHECK-IN & PHOTO UPLOAD FALLBACKS
+  // ─────────────────────────────────────────────────────────────
   const handleManualCheckIn = async () => {
     if (!selectedStaffId) return;
     setIsLoading(true);
@@ -796,24 +808,17 @@ export default function FeedStaffAttendance({
 
     try {
       const staffObj = staffList.find(s => s.id === selectedStaffId);
-      if (staffObj && checkType === 'check_in') {
-        setIdentifiedStaff({
-          staffId: staffObj.id,
-          staffName: staffObj.name,
-          confidence: 1.0,
-          isReal: true,
-          detectedAt: Date.now()
-        });
-      }
-
       await checkInStaff({
         staffId: selectedStaffId,
+        staffName: staffObj?.name || selectedStaffId,
         penId: currentPenId || '123',
         checkType,
-        note: `Chấm công thủ công 24/7 mọi lúc`
+        confidence: 1.0,
+        isReal: true,
+        note: `Chấm công thủ công dự phòng`
       });
 
-      const typeLabel = checkType === 'check_in' ? 'Vào ca' : checkType === 'check_out' ? 'Tan ca' : 'Chấm công';
+      const typeLabel = checkType === 'check_in' ? 'Vào ca' : 'Tan ca';
       const msg = `✅ Đã chấm công [${typeLabel}] thành công cho ${staffObj?.name || selectedStaffId}`;
       setStatusMessage({ type: 'success', text: msg });
 
@@ -826,14 +831,13 @@ export default function FeedStaffAttendance({
     } catch (err: any) {
       setStatusMessage({
         type: 'error',
-        text: err.message || 'Lỗi khi chấm công.'
+        text: err.message || 'Lỗi khi chấm công thủ công.'
       });
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Upload photo checkin fallback
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -855,7 +859,7 @@ export default function FeedStaffAttendance({
       });
       setSelectedStaffId(staffId);
 
-      const msg = `✅ Đã nhận diện ảnh: ${staffName} (${staffId}). Vui lòng bấm [Bước tiếp theo] để quét trang phục bắt buộc!`;
+      const msg = `✅ Đã nhận diện ảnh: ${staffName} (${staffId}). Vui lòng bấm [Quét Trang Phục & Khẩu Trang]!`;
       setStatusMessage({ type: 'success', text: msg });
       if (onNotification) {
         onNotification('Xác thực khuôn mặt', msg);
@@ -871,7 +875,6 @@ export default function FeedStaffAttendance({
     }
   };
 
-  // Upload photo uniform fallback
   const handleUniformFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -879,7 +882,7 @@ export default function FeedStaffAttendance({
     setIsLoading(true);
     setStatusMessage(null);
     try {
-      const res = await scanUniformUploadAPI(file, uniformRuleWeekday);
+      const res = await scanUniformUploadAPI(file, FIXED_UNIFORM_RULE);
       const u = res.uniform || {};
       setUniformResult(u);
 
@@ -890,13 +893,13 @@ export default function FeedStaffAttendance({
           } else {
             setStatusMessage({
               type: 'success',
-              text: `✅ ${u.message || 'Ảnh tải lên: Đúng quy định đồng phục & khẩu trang!'}`
+              text: `✅ Ảnh đạt chuẩn: Áo xanh bảo hộ, quần tối màu & khẩu trang y tế!`
             });
           }
         } else {
           setStatusMessage({
             type: 'error',
-            text: `❌ ${u.message || 'Ảnh tải lên: Vi phạm quy định đồng phục!'}`
+            text: `❌ ${u.message || 'Ảnh tải lên chưa đúng quy chuẩn trang phục an toàn sinh học!'}`
           });
         }
       } else {
@@ -908,7 +911,7 @@ export default function FeedStaffAttendance({
     } catch (err: any) {
       setStatusMessage({
         type: 'error',
-        text: err.message || 'Lỗi khi upload ảnh kiểm tra đồng phục.'
+        text: err.message || 'Lỗi khi kiểm tra đồng phục qua ảnh.'
       });
     } finally {
       setIsLoading(false);
@@ -917,7 +920,7 @@ export default function FeedStaffAttendance({
   };
 
   // ─────────────────────────────────────────────────────────────
-  // ENROLL FACEID HANDLERS
+  // ENROLL FACEID
   // ─────────────────────────────────────────────────────────────
   const handleCaptureEnrollFromWebcam = () => {
     if (!videoRef.current) return;
@@ -928,7 +931,6 @@ export default function FeedStaffAttendance({
     canvas.height = v.videoHeight;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    // Mirror back because webcam is mirrored in CSS
     ctx.translate(canvas.width, 0);
     ctx.scale(-1, 1);
     ctx.drawImage(v, 0, 0, canvas.width, canvas.height);
@@ -954,38 +956,39 @@ export default function FeedStaffAttendance({
 
   const handleEnrollSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!enrollStaffId.trim() || !enrollStaffName.trim() || !enrollFile) {
-      setEnrollModalMsg({ type: 'error', text: 'Vui lòng điền đủ Mã NV, Tên và chọn ảnh khuôn mặt.' });
+    if (!enrollStaffId || !enrollStaffName || !enrollFile) {
+      setEnrollModalMsg({ type: 'error', text: 'Vui lòng điền đủ mã nhân viên, họ tên và chọn ảnh.' });
       return;
     }
+
     setIsEnrolling(true);
     setEnrollModalMsg(null);
+
     try {
       const res = await enrollStaffFace(
-        enrollStaffId.trim(),
-        enrollStaffName.trim(),
+        enrollStaffId,
+        enrollStaffName,
         enrollFile,
         enrollRole,
         enrollPenId || currentPenId || '123'
       );
+
       setEnrollModalMsg({
         type: 'success',
-        text: res.message || `Đã đăng ký khuôn mặt thành công cho ${enrollStaffName}!`
+        text: `Đã lưu FaceID thành công cho ${enrollStaffName} (${enrollStaffId})!`
       });
+
       await fetchInitialData();
-      if (onNotification) {
-        onNotification('Đăng ký khuôn mặt', `Đã thêm thành công ${enrollStaffName} (${enrollStaffId})`);
-      }
       setTimeout(() => {
         setIsEnrollModalOpen(false);
+        setEnrollModalMsg(null);
         setEnrollFile(null);
         setEnrollPreviewUrl(null);
-        setEnrollModalMsg(null);
       }, 1500);
     } catch (err: any) {
       setEnrollModalMsg({
         type: 'error',
-        text: err.message || 'Lỗi khi đăng ký khuôn mặt. Vui lòng thử lại với ảnh rõ nét hơn.'
+        text: err.message || 'Lỗi khi đăng ký khuôn mặt mới.'
       });
     } finally {
       setIsEnrolling(false);
@@ -993,12 +996,12 @@ export default function FeedStaffAttendance({
   };
 
   const handleReloadFaces = async () => {
+    setIsLoading(true);
     try {
-      setIsLoading(true);
       const res = await reloadStaffFacesAPI();
       setStatusMessage({
         type: 'success',
-        text: `✅ ${res.message || `Đã làm mới ${res.total_faces || 0} khuôn mặt từ thư mục known_faces!`}`
+        text: `✅ ${res.message || 'Đã làm mới danh sách khuôn mặt nhận diện!'}`
       });
       await fetchInitialData();
     } catch (err: any) {
@@ -1011,695 +1014,684 @@ export default function FeedStaffAttendance({
     }
   };
 
-  // Calculate today's headcount
   const todayDateStr = new Date().toISOString().split('T')[0];
   const todayLogs = attendanceLogs.filter(l => (l.created_at || '').startsWith(todayDateStr));
   const activeStaffIds = new Set(todayLogs.filter(l => l.check_type !== 'check_out').map(l => l.staff_id));
 
   return (
-    <div className="bg-fb-card rounded-2xl p-4 md:p-5 shadow-fb-card border border-fb-divider space-y-4">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-fb-divider gap-2">
-        <div className="flex items-center gap-2.5">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-600 via-teal-500 to-emerald-500 text-white flex items-center justify-center shadow-md">
-            <Radio className="w-5 h-5 animate-pulse" />
+    <div className="bg-white rounded-3xl p-4 sm:p-6 shadow-sm border border-slate-200/90 space-y-5">
+      {/* ─────────────────────────────────────────────────────────────
+          1. HEADER SECTION (Gọn gàng, thanh thoát)
+      ───────────────────────────────────────────────────────────── */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-100 gap-3">
+        <div className="flex items-center gap-3">
+          <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center shadow-md shadow-emerald-500/20">
+            <ShieldCheck className="w-6 h-6" />
           </div>
           <div>
-            <h3 className="font-bold text-base text-fb-text flex items-center gap-2">
-              <span>Hệ Thống Quét Máy Ảnh Trực Tiếp 24/7</span>
-              <span className="text-[10px] font-mono uppercase bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-bold">
-                Phát Trực Tiếp
+            <div className="flex items-center gap-2">
+              <h3 className="font-bold text-base text-slate-900 tracking-tight">
+                Chấm Công & Kiểm Soát An Toàn Sinh Học
+              </h3>
+              <span className="text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200/80 px-2 py-0.5 rounded-full">
+                AI 24/7
               </span>
-            </h3>
-            <p className="text-xs text-fb-muted">
-              Bật máy ảnh là tự động quét liên tục thời gian thực • Nhận diện khuôn mặt & Quét toàn thân kiểm tra đồng phục
+            </div>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Nhận diện khuôn mặt FaceID • Tự động quét trang phục bảo hộ chuẩn nông trại
             </p>
           </div>
         </div>
 
-        {/* Engine status & Actions */}
+        {/* Action Controls & Badges */}
         <div className="flex items-center gap-2 self-start sm:self-center flex-wrap">
-          <span 
-            className={`text-[11px] font-medium px-2.5 py-1 rounded-full flex items-center gap-1.5 border ${
-              visionOnline 
-                ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
-                : 'bg-amber-50 text-amber-700 border-amber-200'
-            }`}
-          >
-            <span className={`w-2 h-2 rounded-full ${visionOnline ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
-            {visionOnline ? 'Trí Tuệ Nhân Tạo: Trực Tuyến' : 'Hệ Thống Nhận Diện Sẵn Sàng'}
+          <span className="text-xs font-semibold px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-700">
+            Đang trực: <strong className="text-emerald-600 font-bold">{activeStaffIds.size}</strong>/{staffList.length} nhân sự
           </span>
 
-          {/* Button: Đăng ký khuôn mặt mới */}
           <button
             onClick={() => {
               setEnrollStaffId(`NV${String(staffList.length + 1).padStart(2, '0')}`);
               setEnrollPenId(currentPenId || '123');
               setIsEnrollModalOpen(true);
             }}
-            className="text-xs px-3 py-1.5 rounded-xl font-bold bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-sm transition flex items-center gap-1.5 cursor-pointer"
-            title="Đăng ký thêm khuôn mặt mới vào hệ thống điểm danh"
+            className="text-xs px-3.5 py-1.5 rounded-xl font-bold bg-slate-900 hover:bg-slate-800 text-white shadow-sm transition flex items-center gap-1.5 cursor-pointer"
           >
             <UserPlus className="w-3.5 h-3.5" />
-            <span>+ Thêm Khuôn Mặt</span>
+            <span>+ Thêm FaceID</span>
           </button>
 
           <button
             onClick={handleReloadFaces}
-            title="Làm mới thư mục ảnh known_faces"
-            className="p-1.5 rounded-lg hover:bg-fb-hover text-fb-muted transition"
+            title="Làm mới thư mục khuôn mặt known_faces"
+            className="p-1.5 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition"
           >
             <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin text-emerald-600' : ''}`} />
           </button>
         </div>
       </div>
 
-      {/* Alert / Status Toast */}
+      {/* Alert / Toast Notification */}
       {statusMessage && (
         <div 
-          className={`p-3 rounded-xl text-xs font-medium flex items-center gap-2 transition ${
+          className={`p-3 rounded-2xl text-xs font-medium flex items-center justify-between gap-2 transition animate-in fade-in ${
             statusMessage.type === 'success'
-              ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-              : 'bg-red-50 text-red-800 border border-red-200'
+              ? 'bg-emerald-50 text-emerald-900 border border-emerald-200'
+              : 'bg-rose-50 text-rose-900 border border-rose-200'
           }`}
         >
-          {statusMessage.type === 'success' ? (
-            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-          ) : (
-            <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
-          )}
-          <span>{statusMessage.text}</span>
-        </div>
-      )}
-
-      {/* 2-STEP BIO-SECURITY ENTRANCE PROTOCOL HEADER */}
-      <div className="bg-gradient-to-r from-slate-900 via-slate-950 to-slate-900 p-3.5 rounded-2xl border border-slate-800 text-white space-y-3 shadow-md">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800/80 pb-2">
           <div className="flex items-center gap-2">
-            <ShieldCheck className="w-4 h-4 text-emerald-400" />
-            <span className="font-extrabold text-xs uppercase tracking-wider text-emerald-400">
-              Quy Trình Vào Ca 2 Bước Bắt Buộc (An Toàn Sinh Học)
-            </span>
-          </div>
-          <span className="text-[11px] text-slate-400 font-mono">
-            {checkinStep === 'step1_face' 
-              ? '👉 Bước 1: Xác Thực Khuôn Mặt' 
-              : checkinStep === 'step2_uniform' 
-              ? '👉 Bước 2: Quét Trang Phục & Khẩu Trang' 
-              : '🎉 Hoàn Tất Vào Ca 100%'}
-          </span>
-        </div>
-
-        {/* 2 Steps Indicator Bar */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-          {/* STEP 1 PILL */}
-          <button
-            onClick={() => { setCheckinStep('step1_face'); setActiveTab('attendance'); }}
-            className={`p-3 rounded-xl border text-left transition flex items-center justify-between cursor-pointer ${
-              checkinStep === 'step1_face'
-                ? 'bg-emerald-950/80 border-emerald-400 shadow-[0_0_20px_rgba(16,185,129,0.3)]'
-                : identifiedStaff
-                ? 'bg-slate-900/90 border-emerald-600/70 text-slate-300'
-                : 'bg-slate-900/40 border-slate-800 text-slate-500'
-            }`}
-          >
-            <div className="flex items-center gap-3">
-              <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-black text-xs ${
-                identifiedStaff
-                  ? 'bg-emerald-500 text-slate-950 shadow'
-                  : checkinStep === 'step1_face'
-                  ? 'bg-emerald-500/30 text-emerald-300 border border-emerald-400 animate-pulse'
-                  : 'bg-slate-800 text-slate-400'
-              }`}>
-                {identifiedStaff ? '✓' : '1'}
-              </div>
-              <div>
-                <div className="font-bold text-xs flex items-center gap-1.5 text-white">
-                  <span>Bước 1: Xác Thực Khuôn Mặt</span>
-                  <span className="text-[10px] text-emerald-400 font-normal">(Bỏ khẩu trang)</span>
-                </div>
-                <div className="text-[10px] text-slate-400">
-                  {identifiedStaff ? `Đã nhận diện: ${identifiedStaff.staffName} (${identifiedStaff.staffId})` : 'Đứng trước máy ảnh để nhận diện'}
-                </div>
-              </div>
-            </div>
-            {checkinStep === 'step1_face' && (
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
-            )}
-          </button>
-
-          {/* STEP 2 PILL */}
-          <button
-            onClick={() => {
-              if (identifiedStaff) {
-                setCheckinStep('step2_uniform');
-                setActiveTab('uniform');
-              }
-            }}
-            disabled={!identifiedStaff}
-            className={`p-3 rounded-xl border text-left transition flex items-center justify-between ${
-              checkinStep === 'step2_uniform'
-                ? 'bg-cyan-950/80 border-cyan-400 shadow-[0_0_20px_rgba(6,182,212,0.3)]'
-                : checkinStep === 'completed'
-                ? 'bg-slate-900/90 border-emerald-600/70 text-slate-300'
-                : 'bg-slate-900/40 border-slate-800 text-slate-500 cursor-not-allowed'
-            }`}
-          >
-            <div className="flex items-center gap-3">
-              <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-black text-xs ${
-                checkinStep === 'completed'
-                  ? 'bg-emerald-500 text-slate-950 shadow'
-                  : checkinStep === 'step2_uniform'
-                  ? 'bg-cyan-500 text-slate-950 animate-pulse'
-                  : 'bg-slate-800 text-slate-500'
-              }`}>
-                {checkinStep === 'completed' ? '✓' : '2'}
-              </div>
-              <div>
-                <div className="font-bold text-xs flex items-center gap-1.5 text-white">
-                  <span>Bước 2: Quét Trang Phục & Khẩu Trang</span>
-                  <span className="text-[10px] text-cyan-400 font-normal">(Bắt buộc)</span>
-                </div>
-                <div className="text-[10px] text-slate-400">
-                  {checkinStep === 'completed' 
-                    ? 'Đã duyệt đạt chuẩn 100%' 
-                    : identifiedStaff 
-                    ? 'Đeo khẩu trang y tế và quét toàn thân' 
-                    : 'Cần hoàn thành Bước 1 trước'}
-                </div>
-              </div>
-            </div>
-            {checkinStep === 'step2_uniform' && (
-              <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-ping" />
-            )}
-          </button>
-        </div>
-      </div>
-
-      {/* CONTEXTUAL STEP ACTION BANNERS */}
-      {checkinStep === 'step1_face' && identifiedStaff && (
-        <div className="p-4 bg-gradient-to-r from-emerald-950/95 via-teal-950/95 to-slate-950 border-2 border-emerald-400 text-white rounded-2xl shadow-xl flex flex-col sm:flex-row items-center justify-between gap-4 animate-in fade-in duration-300">
-          <div className="flex items-center gap-3.5">
-            <div className="w-12 h-12 rounded-2xl bg-emerald-500 text-slate-950 font-black text-xl flex items-center justify-center shadow-lg">
-              ✓
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-black uppercase tracking-wider bg-emerald-400 text-slate-950 px-2 py-0.5 rounded-full">
-                  Bước 1 Hoàn Tất
-                </span>
-                <span className="text-xs text-emerald-300 font-mono">
-                  Khớp {Math.round(identifiedStaff.confidence * 100)}%
-                </span>
-              </div>
-              <h4 className="text-base font-extrabold text-white mt-0.5">
-                Đã ghi nhận nhân sự: <span className="text-emerald-300">{identifiedStaff.staffName} ({identifiedStaff.staffId})</span>
-              </h4>
-              <p className="text-xs text-amber-300 font-medium flex items-center gap-1.5 mt-1">
-                <span>😷</span>
-                <span><strong>Yêu cầu bắt buộc:</strong> Vui lòng <u>đeo khẩu trang y tế</u> và lùi lại để máy ảnh quét trang phục!</span>
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            <button
-              onClick={goToStep2}
-              className="flex-1 sm:flex-none px-6 py-3 rounded-xl font-black text-xs uppercase tracking-wider bg-gradient-to-r from-cyan-400 via-teal-400 to-emerald-400 hover:from-cyan-300 hover:to-emerald-300 text-slate-950 shadow-[0_0_25px_rgba(6,182,212,0.6)] transition transform active:scale-95 flex items-center justify-center gap-2"
-            >
-              <span>Bước Tiếp Theo: Quét Trang Phục & Khẩu Trang</span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
-            <button
-              onClick={resetToStep1}
-              className="px-3 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition"
-              title="Nhận diện lại hoặc đổi người khác"
-            >
-              <RotateCcw className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      )}
-
-      {checkinStep === 'step1_face' && !identifiedStaff && (
-        <div className="p-3 bg-slate-100 border border-slate-200 rounded-xl flex items-center justify-between text-xs text-slate-700">
-          <div className="flex items-center gap-2">
-            <span className="text-base">💡</span>
-            <span>
-              <strong>Bước 1/2:</strong> Nhân sự đứng trước máy ảnh, <strong>bỏ khẩu trang</strong> để hệ thống nhận diện khuôn mặt. Sau khi nhận diện, hệ thống sẽ mở nút <strong>Bước tiếp theo</strong> để quét trang phục bắt buộc.
-            </span>
-          </div>
-          <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full shrink-0">
-            Đang chờ quét mặt
-          </span>
-        </div>
-      )}
-
-      {checkinStep === 'step2_uniform' && (
-        <div className="p-4 bg-gradient-to-r from-cyan-950/95 via-slate-950 to-slate-900 border-2 border-cyan-400 text-white rounded-2xl shadow-xl space-y-3">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-cyan-800/60 pb-2.5">
-            <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl bg-cyan-500 text-slate-950 font-black text-base flex items-center justify-center shadow">
-                2
-              </div>
-              <div>
-                <span className="text-[10px] font-bold uppercase tracking-wider bg-cyan-500 text-slate-950 px-2 py-0.5 rounded-full">
-                  Bước 2/2: Quét Trang Phục Bắt Buộc
-                </span>
-                <h4 className="text-sm font-bold text-white mt-0.5">
-                  Đang kiểm tra: <span className="text-cyan-300 font-extrabold">{identifiedStaff?.staffName} ({identifiedStaff?.staffId})</span>
-                </h4>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                onClick={goBackToStep1}
-                className="text-[11px] px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition"
-              >
-                ← Quay lại Bước 1
-              </button>
-            </div>
-          </div>
-
-          {/* Real-time Bio-security Checklist */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
-            {/* 1. Mask Check */}
-            <div className={`p-2.5 rounded-xl border flex items-center justify-between ${
-              uniformResult?.mask?.has_mask ? 'bg-emerald-950/80 border-emerald-500 text-emerald-200' : 'bg-rose-950/80 border-rose-500 text-rose-200'
-            }`}>
-              <div className="flex items-center gap-2">
-                <span className="text-base">😷</span>
-                <div>
-                  <div className="font-bold">1. Khẩu Trang Y Tế</div>
-                  <div className="text-[10px] opacity-80">Bắt buộc che kín mũi miệng</div>
-                </div>
-              </div>
-              <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] uppercase ${
-                uniformResult?.mask?.has_mask ? 'bg-emerald-500 text-slate-950' : 'bg-rose-500 text-white animate-pulse'
-              }`}>
-                {uniformResult?.mask?.has_mask ? (uniformResult.mask.mask_color === 'blue' ? '✓ ĐÃ ĐEO (XANH)' : '✓ ĐÃ ĐEO') : '✗ CHƯA ĐEO'}
-              </span>
-            </div>
-
-            {/* 2. Shirt Check */}
-            <div className={`p-2.5 rounded-xl border flex items-center justify-between ${
-              ['blue', 'cyan', 'white'].includes(uniformResult?.shirt_color) ? 'bg-emerald-950/80 border-emerald-500 text-emerald-200' : 'bg-slate-900 border-slate-700 text-slate-300'
-            }`}>
-              <div className="flex items-center gap-2">
-                <span className="text-base">👔</span>
-                <div>
-                  <div className="font-bold">2. Áo Bảo Hộ</div>
-                  <div className="text-[10px] opacity-80">Áo xanh dương / cyan</div>
-                </div>
-              </div>
-              <span className="font-bold text-[10px] uppercase">
-                {uniformResult?.shirt_color ? uniformResult.shirt_color.toUpperCase() : 'QUÉT...'}
-              </span>
-            </div>
-
-            {/* 3. Pants Check */}
-            <div className={`p-2.5 rounded-xl border flex items-center justify-between ${
-              uniformResult?.pants_color === 'dark' ? 'bg-emerald-950/80 border-emerald-500 text-emerald-200' : 'bg-slate-900 border-slate-700 text-slate-300'
-            }`}>
-              <div className="flex items-center gap-2">
-                <span className="text-base">👖</span>
-                <div>
-                  <div className="font-bold">3. Quần Dài</div>
-                  <div className="text-[10px] opacity-80">Quần tối màu</div>
-                </div>
-              </div>
-              <span className="font-bold text-[10px] uppercase">
-                {uniformResult?.pants_color ? uniformResult.pants_color.toUpperCase() : 'QUÉT...'}
-              </span>
-            </div>
-          </div>
-
-          {/* Status & Confirmation Action */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
-            <div className="text-xs">
-              {uniformResult?.is_correct ? (
-                <span className="text-emerald-400 font-bold flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                  ✅ ĐẠT CHUẨN AN TOÀN SINH HỌC! Đang hoàn tất xác nhận vào ca...
-                </span>
-              ) : uniformResult?.mask && !uniformResult.mask.has_mask ? (
-                <span className="text-rose-400 font-bold flex items-center gap-1.5">
-                  ⚠️ Vui lòng đeo khẩu trang y tế che kín mũi miệng để được duyệt vào ca!
-                </span>
-              ) : (
-                <span className="text-slate-400">
-                  Đứng lùi lại cách máy ảnh 1.5m - 2m để quét toàn thân (áo + quần + khẩu trang).
-                </span>
-              )}
-            </div>
-
-            {uniformResult?.is_correct && (
-              <button
-                onClick={() => handleFinalizeTwoStepCheckIn(identifiedStaff, uniformResult)}
-                disabled={isFinalizingCheckin}
-                className="px-5 py-2.5 rounded-xl font-black text-xs uppercase bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-lg flex items-center justify-center gap-2 transition"
-              >
-                <CheckCircle2 className="w-4 h-4" />
-                <span>Xác Nhận Hoàn Tất Vào Ca</span>
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-
-      {checkinStep === 'completed' && (
-        <div className="p-5 bg-gradient-to-r from-emerald-950 via-teal-950 to-slate-950 border-2 border-emerald-400 text-white rounded-2xl shadow-[0_0_40px_rgba(16,185,129,0.35)] flex flex-col sm:flex-row items-center justify-between gap-4 animate-in zoom-in-95 duration-300">
-          <div className="flex items-center gap-3.5">
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 text-slate-950 font-black text-2xl flex items-center justify-center shadow-lg">
-              🎉
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-black uppercase tracking-wider bg-emerald-400 text-slate-950 px-2.5 py-0.5 rounded-full">
-                  Hoàn Tất Quy Trình 2 Bước
-                </span>
-                <span className="text-xs text-emerald-300 font-mono">
-                  {new Date().toLocaleTimeString()}
-                </span>
-              </div>
-              <h3 className="text-lg font-black text-white mt-1">
-                Vào Ca Thành Công: {identifiedStaff?.staffName} ({identifiedStaff?.staffId})
-              </h3>
-              <p className="text-xs text-emerald-300 font-medium mt-0.5">
-                ✓ Đã xác thực khuôn mặt &nbsp;•&nbsp; ✓ Đã kiểm tra khẩu trang y tế &nbsp;•&nbsp; ✓ Đạt chuẩn trang phục bảo hộ 100%
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2.5 w-full sm:w-auto">
-            <button
-              onClick={resetToStep1}
-              className="flex-1 sm:flex-none px-6 py-3 rounded-xl font-bold text-xs uppercase tracking-wider bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-lg transition flex items-center justify-center gap-2 cursor-pointer"
-            >
-              <UserCheck className="w-4 h-4" />
-              <span>Tiếp Tục Người Kế Tiếp {autoResetTimer ? `(${autoResetTimer}s)` : ''}</span>
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* FUNCTION TAB SWITCHER: Face Attendance vs Full-Body Uniform */}
-      <div className="flex p-1 bg-slate-100 rounded-xl gap-1">
-        <button
-          onClick={() => { setActiveTab('attendance'); setCheckinStep('step1_face'); }}
-          className={`flex-1 py-2 rounded-lg text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer ${
-            activeTab === 'attendance'
-              ? 'bg-white text-emerald-800 shadow-sm'
-              : 'text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          <UserCheck className="w-4 h-4 text-emerald-600" />
-          <span>👤 Điểm Danh Khuôn Mặt (Bước 1)</span>
-        </button>
-
-        <button
-          onClick={() => { setActiveTab('uniform'); if (identifiedStaff) setCheckinStep('step2_uniform'); }}
-          className={`flex-1 py-2 rounded-lg text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer ${
-            activeTab === 'uniform'
-              ? 'bg-white text-cyan-800 shadow-sm'
-              : 'text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          <Shirt className="w-4 h-4 text-cyan-600" />
-          <span>👔 Kiểm Tra Trang Phục & Khẩu Trang (Bước 2)</span>
-        </button>
-      </div>
-
-      {/* SHARED LIVE CAMERA VIEWFINDER */}
-      <div className="border border-fb-divider rounded-2xl p-4 bg-slate-950 text-slate-100 shadow-inner space-y-3">
-        {/* Viewfinder Header Controls */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-800 gap-2">
-          <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping" />
-            <h4 className="font-bold text-sm text-cyan-300 flex items-center gap-2">
-              <span>Luồng Quét Máy Ảnh Thời Gian Thực</span>
-              {isCameraActive && (
-                <span className="text-[10px] bg-rose-950 text-rose-300 border border-rose-800 px-2 py-0.5 rounded-full font-mono uppercase">
-                  ● TRỰC TIẾP ({liveScanFps > 0 ? `${liveScanFps} khung hình/giây` : 'Đang quét...'})
-                </span>
-              )}
-            </h4>
-          </div>
-
-          {/* Camera Controls & Mode Toggle */}
-          <div className="flex items-center gap-2 flex-wrap">
-            {isCameraActive ? (
-              <>
-                {/* Pause/Resume Live AI Scan */}
-                <button
-                  onClick={togglePauseLive}
-                  className={`text-[11px] px-2.5 py-1 rounded-lg font-semibold transition flex items-center gap-1 cursor-pointer ${
-                    isLivePaused 
-                      ? 'bg-amber-600 hover:bg-amber-500 text-white' 
-                      : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
-                  }`}
-                >
-                  {isLivePaused ? <Play className="w-3.5 h-3.5" /> : <Pause className="w-3.5 h-3.5" />}
-                  <span>{isLivePaused ? 'Tiếp Tục Quét' : 'Tạm Dừng'}</span>
-                </button>
-
-                {/* Source Switcher */}
-                <button
-                  onClick={cameraMode === 'webcam' ? switchToHardwareMode : switchToWebcamMode}
-                  className="text-[11px] px-2.5 py-1 rounded-lg font-semibold bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 transition flex items-center gap-1 cursor-pointer"
-                  title="Chuyển đổi nguồn máy ảnh"
-                >
-                  <Video className="w-3.5 h-3.5" />
-                  <span>{cameraMode === 'webcam' ? 'Dùng Máy Ảnh Chuồng' : 'Dùng Máy Ảnh Máy Tính'}</span>
-                </button>
-
-                {/* Stop Camera */}
-                <button
-                  onClick={stopCamera}
-                  className="text-[11px] px-3 py-1 rounded-lg font-semibold bg-rose-900/70 hover:bg-rose-800 text-rose-200 transition flex items-center gap-1 shadow cursor-pointer"
-                >
-                  <CameraOff className="w-3.5 h-3.5" />
-                  <span>Tắt Máy Ảnh</span>
-                </button>
-              </>
+            {statusMessage.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
             ) : (
-              <>
-                <button
-                  onClick={startCamera}
-                  className="text-[11px] px-4 py-2 rounded-xl font-bold bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-lg transition flex items-center gap-2 cursor-pointer"
-                >
-                  <Camera className="w-4 h-4" />
-                  <span>Bật Máy Ảnh Máy Tính</span>
-                </button>
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+            )}
+            <span>{statusMessage.text}</span>
+          </div>
+          <button 
+            onClick={() => setStatusMessage(null)}
+            className="text-slate-400 hover:text-slate-600 p-0.5 rounded-lg"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
-                <button
-                  onClick={switchToHardwareMode}
-                  className="text-[11px] px-3.5 py-2 rounded-xl font-semibold bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 transition flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Video className="w-4 h-4" />
-                  <span>Mở Máy Ảnh Chuồng Trại</span>
-                </button>
+      {/* ─────────────────────────────────────────────────────────────
+          2. STEP PROGRESS PIPELINE (Trực quan, không rối mắt)
+      ───────────────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {/* BƯỚC 1: XÁC THỰC KHUÔN MẶT */}
+        <button
+          onClick={() => setCheckinStep('step1_face')}
+          className={`p-3.5 rounded-2xl border text-left transition relative cursor-pointer ${
+            checkinStep === 'step1_face'
+              ? 'bg-emerald-50/70 border-emerald-500 shadow-sm'
+              : identifiedStaff
+              ? 'bg-slate-50 border-emerald-300'
+              : 'bg-slate-50/50 border-slate-200 opacity-80'
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs ${
+                identifiedStaff
+                  ? 'bg-emerald-500 text-white shadow-sm'
+                  : checkinStep === 'step1_face'
+                  ? 'bg-emerald-100 text-emerald-800'
+                  : 'bg-slate-200 text-slate-500'
+              }`}>
+                {identifiedStaff ? <Check className="w-4 h-4 stroke-[3]" /> : '1'}
+              </div>
+              <div>
+                <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                  <span>Bước 1: Xác Thực Khuôn Mặt (FaceID)</span>
+                </div>
+                <div className="text-[11px] text-slate-500 mt-0.5">
+                  {identifiedStaff ? (
+                    <span className="text-emerald-700 font-semibold">
+                      Đã khớp: {identifiedStaff.staffName} ({identifiedStaff.staffId})
+                    </span>
+                  ) : (
+                    'Bỏ khẩu trang để nhận diện danh tính'
+                  )}
+                </div>
+              </div>
+            </div>
 
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  onChange={handleFileUpload}
-                  className="hidden"
-                />
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  className="text-[11px] px-2.5 py-2 rounded-xl font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 transition flex items-center gap-1 cursor-pointer"
-                >
-                  <Upload className="w-3.5 h-3.5" />
-                  <span>Tải ảnh</span>
-                </button>
-              </>
+            {checkinStep === 'step1_face' && (
+              <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-100/70 px-2.5 py-1 rounded-full">
+                Đang Quét
+              </span>
             )}
           </div>
-        </div>
+        </button>
 
-        {/* Video Viewfinder Container (ALWAYS MOUNTED TO PREVENT NULL REFS) */}
-        <div className="relative rounded-2xl overflow-hidden bg-black flex items-center justify-center border border-slate-800 aspect-video max-h-[460px] mx-auto shadow-2xl">
-          {/* 1. Client Webcam Video Element */}
-          <video
-            ref={videoRef}
-            autoPlay
-            playsInline
-            muted
-            className={`w-full h-full object-cover ${isCameraActive && cameraMode === 'webcam' ? 'block' : 'hidden'}`}
-            style={{ transform: 'scaleX(-1)' }}
-          />
-
-          {/* 2. Client Live Canvas HUD Overlay */}
-          <canvas
-            ref={overlayCanvasRef}
-            className={`absolute inset-0 w-full h-full pointer-events-none ${isCameraActive && cameraMode === 'webcam' ? 'block' : 'hidden'}`}
-          />
-
-          {/* 3. Server Hardware MJPEG Video Stream (30 FPS OpenCV HUD) */}
-          {isCameraActive && cameraMode === 'hardware' && (
-            <img
-              key={hardwareStreamKey}
-              src={hardwareStreamUrl}
-              alt="Luồng máy ảnh trực tiếp"
-              className="w-full h-full object-contain"
-              onError={() => {
-                // Tự động chuyển đổi giữa direct FACE_API_URL và BACKEND_URL proxy
-                console.warn('Stream feed failed, toggling direct vs proxy URL...');
-                setHardwareStreamUrl((prev) =>
-                  prev.includes(FACE_API_URL)
-                    ? `${BACKEND_URL}/api/camera/video_feed?overlay=true&t=${Date.now()}`
-                    : `${FACE_API_URL}/api/v1/camera/video_feed?overlay=true&t=${Date.now()}`
-                );
-              }}
-            />
-          )}
-
-          {/* 4. Inactive Placeholder Cover */}
-          {!isCameraActive && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950 p-6 space-y-3 z-10">
-              <div className="w-12 h-12 rounded-2xl bg-slate-900 border border-slate-800 text-cyan-400 flex items-center justify-center shadow-inner">
-                <Camera className="w-6 h-6" />
-              </div>
-              <div className="text-center space-y-1">
-                <h5 className="font-bold text-sm text-slate-200">
-                  Máy Ảnh Đang Tắt • Sẵn Sàng Nhận Diện 24/7
-                </h5>
-                <p className="text-xs text-slate-400 max-w-md">
-                  Bấm một trong hai nút bên dưới để bắt đầu quét trực tiếp theo thời gian thực (tự động hoàn toàn):
-                </p>
-              </div>
-              <div className="pt-2 flex flex-wrap justify-center gap-2.5">
-                <button
-                  onClick={startCamera}
-                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-white font-bold text-xs shadow-lg transition flex items-center gap-2 cursor-pointer"
-                >
-                  <Camera className="w-4 h-4" />
-                  <span>Bật Máy Ảnh Máy Tính</span>
-                </button>
-                <button
-                  onClick={switchToHardwareMode}
-                  className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 font-bold text-xs transition flex items-center gap-2 cursor-pointer"
-                >
-                  <Video className="w-4 h-4" />
-                  <span>Mở Máy Ảnh Chuồng Trại</span>
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* TOP FLOATING LIVE BADGES (When Camera is Active) */}
-          {isCameraActive && (
-            <div className="absolute top-3 left-3 right-3 flex items-center justify-between pointer-events-none z-10">
-              <div className="flex items-center gap-2">
-                <span className="flex items-center gap-1.5 bg-slate-900/80 backdrop-blur-md border border-slate-700 text-cyan-300 text-[10px] font-mono font-bold px-2.5 py-1 rounded-full shadow">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                  {cameraMode === 'webcam' ? 'MÁY ẢNH MÁY TÍNH' : 'MÁY ẢNH CHUỒNG TRẠI'}
-                </span>
-
-                {activeTab === 'attendance' && (
-                  <span className="bg-emerald-950/80 backdrop-blur-md border border-emerald-700 text-emerald-300 text-[10px] font-bold px-2 py-1 rounded-full">
-                    {checkType === 'check_in' ? '🟢 Đang vào ca' : checkType === 'check_out' ? '🔴 Đang tan ca' : '⚡ Chấm công tức thì'}
-                  </span>
-                )}
-              </div>
-
-              <div className="flex items-center gap-1.5 bg-slate-900/80 backdrop-blur-md border border-slate-700 text-slate-300 text-[10px] font-mono px-2.5 py-1 rounded-full shadow">
-                <span className="text-emerald-400 font-bold">{liveScanFps} khung hình/giây</span>
-                <span>•</span>
-                <span className="text-cyan-400">{liveLatencyMs}ms</span>
-              </div>
-            </div>
-          )}
-
-          {/* FLOATING SUCCESS ATTENDANCE BANNER (Automatic Live Trigger) */}
-          {liveSuccessBanner && (
-            <div className="absolute top-12 inset-x-4 flex justify-center pointer-events-none z-20 animate-in slide-in-from-top-4 duration-300">
-              <div className="bg-emerald-950/95 border-2 border-emerald-400 text-emerald-100 px-5 py-3 rounded-2xl shadow-[0_0_35px_rgba(16,185,129,0.6)] backdrop-blur-md flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-emerald-500 text-slate-950 flex items-center justify-center font-black text-lg">
-                  ✓
-                </div>
-                <div>
-                  <div className="font-extrabold text-sm text-white">
-                    🎉 ĐÃ ĐIỂM DANH THÀNH CÔNG: {liveSuccessBanner.staffName} ({liveSuccessBanner.staffId})
-                  </div>
-                  <div className="text-[11px] text-emerald-300 font-medium">
-                    {liveSuccessBanner.type === 'check_out' ? 'Tan ca làm việc' : 'Vào ca làm việc'} • Xác thực người thật 100% (Tự động ghi nhận)
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* UNIFORM LIVE STATUS PILL (In Uniform Tab) */}
-          {isCameraActive && activeTab === 'uniform' && uniformResult && (
-            <div className="absolute bottom-3 inset-x-3 flex justify-center pointer-events-none z-10">
-              <div className={`px-4 py-1.5 rounded-full backdrop-blur-md border text-xs font-bold uppercase shadow-lg flex items-center gap-2 ${
-                uniformResult.is_correct
-                  ? 'bg-emerald-950/90 text-emerald-300 border-emerald-500 shadow-emerald-500/20'
-                  : 'bg-rose-950/90 text-rose-300 border-rose-500 shadow-rose-500/20'
+        {/* BƯỚC 2: QUÉT TRANG PHỤC & KHẨU TRANG */}
+        <button
+          onClick={() => { if (identifiedStaff) setCheckinStep('step2_uniform'); }}
+          disabled={!identifiedStaff}
+          className={`p-3.5 rounded-2xl border text-left transition relative ${
+            checkinStep === 'step2_uniform'
+              ? 'bg-cyan-50/70 border-cyan-500 shadow-sm'
+              : checkinStep === 'completed'
+              ? 'bg-slate-50 border-emerald-300'
+              : 'bg-slate-50/40 border-slate-200 text-slate-400 cursor-not-allowed'
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs ${
+                checkinStep === 'completed'
+                  ? 'bg-emerald-500 text-white shadow-sm'
+                  : checkinStep === 'step2_uniform'
+                  ? 'bg-cyan-500 text-white shadow-sm'
+                  : 'bg-slate-200 text-slate-400'
               }`}>
-                <span className={`w-2 h-2 rounded-full ${uniformResult.is_correct ? 'bg-emerald-400' : 'bg-rose-400'} animate-ping`} />
-                <span>
-                  {uniformResult.is_correct 
-                    ? `✅ ĐẠT CHUẨN ĐỒNG PHỤC (Khẩu trang + Áo ${uniformResult.shirt_color} + Quần ${uniformResult.pants_color})`
-                    : uniformResult.mask && !uniformResult.mask.has_mask
-                    ? '❌ VI PHẠM: CHƯA ĐEO KHẨU TRANG BẢO HỘ (BẮT BUỘC)'
-                    : `❌ VI PHẠM: ${uniformResult.message || 'Không đúng quy định'}`}
-                </span>
+                {checkinStep === 'completed' ? <Check className="w-4 h-4 stroke-[3]" /> : '2'}
+              </div>
+              <div>
+                <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                  <span>Bước 2: Quét Trang Phục & Khẩu Trang</span>
+                </div>
+                <div className="text-[11px] text-slate-500 mt-0.5">
+                  {checkinStep === 'completed' ? (
+                    <span className="text-emerald-700 font-semibold">✓ Đã duyệt an toàn sinh học 100%</span>
+                  ) : identifiedStaff ? (
+                    'Đeo khẩu trang & kiểm tra áo xanh, quần tối'
+                  ) : (
+                    'Cần nhận diện khuôn mặt ở Bước 1'
+                  )}
+                </div>
               </div>
             </div>
-          )}
-        </div>
+
+            {checkinStep === 'step2_uniform' && (
+              <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-700 bg-cyan-100/70 px-2.5 py-1 rounded-full">
+                Đang Quét
+              </span>
+            )}
+          </div>
+        </button>
       </div>
 
-      {/* TAB 1 CONTENT: ATTENDANCE CONTROLS */}
-      {activeTab === 'attendance' && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          {/* Check Type Selector */}
-          <div className="bg-fb-bg/70 p-3 rounded-xl border border-fb-divider space-y-2">
-            <label className="text-[11px] font-bold text-fb-muted uppercase tracking-wider block">
-              Loại Chấm Công (Bấm Vào Lúc Nào Cũng Được)
-            </label>
-            <div className="grid grid-cols-2 gap-1.5">
+      {/* ─────────────────────────────────────────────────────────────
+          3. MAIN INTERACTION AREA: VIEWPORT & LIVE CONTEXT PANEL
+      ───────────────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+        {/* CAMERA VIEWPORT (8 cols) */}
+        <div className="lg:col-span-7 xl:col-span-8 space-y-3">
+          <div className="relative rounded-2xl overflow-hidden bg-slate-950 aspect-video max-h-[440px] flex items-center justify-center border border-slate-800 shadow-inner group">
+            {/* 1. Client Webcam Video Element */}
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              className={`w-full h-full object-cover ${isCameraActive && cameraMode === 'webcam' ? 'block' : 'hidden'}`}
+              style={{ transform: 'scaleX(-1)' }}
+            />
+
+            {/* 2. Client Live Canvas HUD Overlay */}
+            <canvas
+              ref={overlayCanvasRef}
+              className={`absolute inset-0 w-full h-full pointer-events-none ${isCameraActive && cameraMode === 'webcam' ? 'block' : 'hidden'}`}
+            />
+
+            {/* 3. Server Hardware MJPEG Video Stream */}
+            {isCameraActive && cameraMode === 'hardware' && (
+              <img
+                key={hardwareStreamKey}
+                src={hardwareStreamUrl}
+                alt="Luồng máy ảnh chuồng trại"
+                className="w-full h-full object-contain"
+                onError={() => {
+                  setHardwareStreamUrl((prev) =>
+                    prev.includes(FACE_API_URL)
+                      ? `${BACKEND_URL}/api/camera/video_feed?overlay=true&t=${Date.now()}`
+                      : `${FACE_API_URL}/api/v1/camera/video_feed?overlay=true&t=${Date.now()}`
+                  );
+                }}
+              />
+            )}
+
+            {/* 4. Inactive Camera Placeholder */}
+            {!isCameraActive && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center space-y-3 bg-gradient-to-b from-slate-900 to-slate-950 text-white">
+                <div className="w-14 h-14 rounded-2xl bg-slate-800 border border-slate-700 text-emerald-400 flex items-center justify-center shadow-lg">
+                  <Camera className="w-7 h-7" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-sm text-slate-100">
+                    Máy Ảnh Đang Tắt • Sẵn Sàng Điểm Danh 24/7
+                  </h4>
+                  <p className="text-xs text-slate-400 max-w-sm mt-1">
+                    Bật máy ảnh để tự động quét khuôn mặt và kiểm tra trang phục bảo hộ nông trại.
+                  </p>
+                </div>
+                <div className="pt-2 flex flex-wrap gap-2.5 justify-center">
+                  <button
+                    onClick={startCamera}
+                    className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-md transition flex items-center gap-2 cursor-pointer"
+                  >
+                    <Camera className="w-4 h-4" />
+                    <span>Bật Máy Ảnh Máy Tính</span>
+                  </button>
+                  <button
+                    onClick={switchToHardwareMode}
+                    className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-semibold text-xs transition flex items-center gap-2 cursor-pointer"
+                  >
+                    <Video className="w-4 h-4 text-cyan-400" />
+                    <span>Dùng Camera Chuồng Trại</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Floating Top Badges when Active */}
+            {isCameraActive && (
+              <div className="absolute top-3 inset-x-3 flex items-center justify-between pointer-events-none z-10">
+                <div className="flex items-center gap-2">
+                  <span className="flex items-center gap-1.5 bg-slate-900/80 backdrop-blur-md border border-slate-700 text-slate-200 text-[10px] font-semibold px-2.5 py-1 rounded-full shadow">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                    {cameraMode === 'webcam' ? 'Máy ảnh máy tính' : 'Camera chuồng trại'}
+                  </span>
+                  <span className="bg-emerald-950/80 backdrop-blur-md border border-emerald-600 text-emerald-300 text-[10px] font-bold px-2 py-1 rounded-full">
+                    {checkType === 'check_in' ? '🟢 Vào ca' : '🔴 Tan ca'}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-1.5 bg-slate-900/80 backdrop-blur-md border border-slate-700 text-slate-300 text-[10px] font-mono px-2.5 py-1 rounded-full shadow">
+                  <span className="text-emerald-400 font-bold">{liveScanFps} FPS</span>
+                  <span>•</span>
+                  <span className="text-cyan-400">{liveLatencyMs}ms</span>
+                </div>
+              </div>
+            )}
+
+            {/* Floating Live Uniform Status Bar (Step 2) */}
+            {isCameraActive && checkinStep === 'step2_uniform' && uniformResult && (
+              <div className="absolute bottom-3 inset-x-3 flex justify-center pointer-events-none z-10">
+                <div className={`px-4 py-1.5 rounded-full backdrop-blur-md border text-xs font-bold shadow-lg flex items-center gap-2 ${
+                  uniformResult.is_correct
+                    ? 'bg-emerald-950/90 text-emerald-300 border-emerald-500'
+                    : 'bg-rose-950/90 text-rose-300 border-rose-500'
+                }`}>
+                  <span className={`w-2 h-2 rounded-full ${uniformResult.is_correct ? 'bg-emerald-400 animate-ping' : 'bg-rose-400'}`} />
+                  <span>
+                    {uniformResult.is_correct 
+                      ? '✅ ĐẠT CHUẨN ĐỒNG PHỤC BẢO HỘ NÔNG TRẠI'
+                      : uniformResult.mask && !uniformResult.mask.has_mask
+                      ? '❌ BẮT BUỘC: ĐEO KHẨU TRANG Y TẾ'
+                      : `❌ VI PHẠM: ${uniformResult.message || 'Chưa đúng chuẩn trang phục'}`}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Action Toolbar Below Viewfinder */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-2.5 bg-slate-50 border border-slate-200 rounded-2xl">
+            {/* Mode: Vào ca / Tan ca */}
+            <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-slate-200">
               <button
                 onClick={() => setCheckType('check_in')}
-                className={`py-2 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                className={`py-1.5 px-3 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
                   checkType === 'check_in'
                     ? 'bg-emerald-600 text-white shadow-sm'
-                    : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
+                    : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
                 <LogIn className="w-3.5 h-3.5" />
                 <span>Vào Ca</span>
               </button>
-
               <button
                 onClick={() => setCheckType('check_out')}
-                className={`py-2 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                className={`py-1.5 px-3 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
                   checkType === 'check_out'
                     ? 'bg-rose-600 text-white shadow-sm'
-                    : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
+                    : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
                 <LogOut className="w-3.5 h-3.5" />
                 <span>Tan Ca</span>
               </button>
             </div>
+
+            {/* Camera Actions */}
+            <div className="flex items-center gap-2 flex-wrap">
+              {isCameraActive ? (
+                <>
+                  <button
+                    onClick={togglePauseLive}
+                    className="text-xs px-2.5 py-1.5 rounded-xl font-semibold bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 transition flex items-center gap-1 cursor-pointer"
+                  >
+                    {isLivePaused ? <Play className="w-3.5 h-3.5 text-emerald-600" /> : <Pause className="w-3.5 h-3.5" />}
+                    <span>{isLivePaused ? 'Tiếp tục' : 'Tạm dừng'}</span>
+                  </button>
+
+                  <button
+                    onClick={cameraMode === 'webcam' ? switchToHardwareMode : switchToWebcamMode}
+                    className="text-xs px-2.5 py-1.5 rounded-xl font-semibold bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 transition flex items-center gap-1 cursor-pointer"
+                    title="Đổi nguồn máy ảnh"
+                  >
+                    <Video className="w-3.5 h-3.5 text-cyan-600" />
+                    <span>{cameraMode === 'webcam' ? 'Camera chuồng' : 'Webcam máy tính'}</span>
+                  </button>
+
+                  <button
+                    onClick={stopCamera}
+                    className="text-xs px-3 py-1.5 rounded-xl font-semibold bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 transition flex items-center gap-1 cursor-pointer"
+                  >
+                    <CameraOff className="w-3.5 h-3.5" />
+                    <span>Tắt Camera</span>
+                  </button>
+                </>
+              ) : (
+                <>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleFileUpload}
+                    className="hidden"
+                  />
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="text-xs px-3 py-1.5 rounded-xl font-medium bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 transition flex items-center gap-1.5 cursor-pointer shadow-sm"
+                  >
+                    <Upload className="w-3.5 h-3.5 text-slate-500" />
+                    <span>Tải ảnh khuôn mặt</span>
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* LIVE CONTEXT & ASSESSMENT PANEL (4 cols) */}
+        <div className="lg:col-span-5 xl:col-span-4 space-y-3">
+          {/* STEP 1: CHỜ QUÉT KHUÔN MẶT */}
+          {checkinStep === 'step1_face' && !identifiedStaff && (
+            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-sm">
+                  1
+                </div>
+                <div>
+                  <h4 className="font-bold text-xs text-slate-900">Bước 1: Quét Khuôn Mặt (FaceID)</h4>
+                  <p className="text-[11px] text-slate-500">Đứng trước máy ảnh và bỏ khẩu trang</p>
+                </div>
+              </div>
+
+              <div className="p-3 bg-white rounded-xl border border-slate-200/80 text-xs text-slate-600 space-y-1.5">
+                <div className="flex items-start gap-2">
+                  <span className="text-emerald-600 font-bold">✓</span>
+                  <span>Nhìn thẳng vào máy ảnh, giữ khoảng cách 0.5m - 1.2m.</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="text-emerald-600 font-bold">✓</span>
+                  <span>Hệ thống AI tự động phân tích và chống giả mạo ảnh chụp.</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="text-emerald-600 font-bold">✓</span>
+                  <span>Sau khi nhận diện, hệ thống tự động chuyển sang kiểm tra đồng phục.</span>
+                </div>
+              </div>
+
+              {liveFaces.length > 0 && (
+                <div className="text-[11px] font-medium text-emerald-700 bg-emerald-50 p-2.5 rounded-xl border border-emerald-200 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                  <span>Đang phát hiện {liveFaces.length} khuôn mặt trong khung hình...</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* STEP 1: ĐÃ NHẬN DIỆN KHUÔN MẶT -> NÚT CHUYỂN SANG BƯỚC 2 */}
+          {checkinStep === 'step1_face' && identifiedStaff && (
+            <div className="p-4 rounded-2xl bg-emerald-50/70 border-2 border-emerald-400 space-y-3 shadow-sm animate-in fade-in">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-800 bg-emerald-200/80 px-2.5 py-0.5 rounded-full">
+                  Bước 1 Hoàn Tất
+                </span>
+                <span className="text-xs text-emerald-700 font-mono font-bold">
+                  Khớp {Math.round(identifiedStaff.confidence * 100)}%
+                </span>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-emerald-500 text-white font-black text-xl flex items-center justify-center shadow-md">
+                  ✓
+                </div>
+                <div>
+                  <h4 className="font-extrabold text-sm text-slate-900">
+                    {identifiedStaff.staffName}
+                  </h4>
+                  <p className="text-xs text-slate-500 font-mono">
+                    Mã NV: {identifiedStaff.staffId}
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-3 bg-white/90 rounded-xl border border-emerald-200 text-xs text-slate-700 space-y-1">
+                <p className="font-bold text-amber-700 flex items-center gap-1.5">
+                  <span>😷 Yêu cầu bắt buộc:</span>
+                </p>
+                <p className="text-[11px] text-slate-600 leading-relaxed">
+                  Vui lòng <strong>đeo khẩu trang y tế</strong> và lùi lại cách máy ảnh 1.5m - 2m để kiểm tra trang phục bảo hộ chuẩn nông trại.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  onClick={goToStep2}
+                  className="flex-1 py-3 px-4 rounded-xl font-bold text-xs uppercase tracking-wider bg-emerald-600 hover:bg-emerald-500 text-white shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <span>Quét Trang Phục & Khẩu Trang</span>
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={resetToStep1}
+                  title="Nhận diện lại người khác"
+                  className="p-3 rounded-xl bg-white border border-slate-200 hover:bg-slate-100 text-slate-600 transition"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 2: QUÉT TRANG PHỤC & KHẨU TRANG (Chuẩn an toàn sinh học) */}
+          {checkinStep === 'step2_uniform' && (
+            <div className="p-4 rounded-2xl bg-slate-900 text-white space-y-3.5 shadow-md">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
+                <div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-400 bg-cyan-950 px-2 py-0.5 rounded-full border border-cyan-800">
+                    Bước 2: Quét An Toàn Sinh Học
+                  </span>
+                  <h4 className="font-bold text-xs text-slate-200 mt-1">
+                    Nhân viên: <span className="text-cyan-300 font-extrabold">{identifiedStaff?.staffName}</span>
+                  </h4>
+                </div>
+                <button
+                  onClick={goBackToStep1}
+                  className="text-[11px] px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition"
+                >
+                  ← Quay lại
+                </button>
+              </div>
+
+              {/* 3 Checklist Items (Mặc định chuẩn image.jpg/png) */}
+              <div className="space-y-2 text-xs">
+                {/* 1. Khẩu trang y tế */}
+                <div className={`p-2.5 rounded-xl border flex items-center justify-between ${
+                  uniformResult?.mask?.has_mask 
+                    ? 'bg-emerald-950/70 border-emerald-500 text-emerald-200' 
+                    : 'bg-rose-950/70 border-rose-500 text-rose-200'
+                }`}>
+                  <div className="flex items-center gap-2">
+                    <span className="text-base">😷</span>
+                    <div>
+                      <div className="font-bold">1. Khẩu Trang Y Tế</div>
+                      <div className="text-[10px] opacity-75">Bắt buộc che kín mũi miệng</div>
+                    </div>
+                  </div>
+                  <span className={`px-2 py-0.5 rounded font-bold text-[10px] uppercase ${
+                    uniformResult?.mask?.has_mask ? 'bg-emerald-500 text-slate-950' : 'bg-rose-500 text-white'
+                  }`}>
+                    {uniformResult?.mask?.has_mask ? '✓ ĐÃ ĐEO' : '✗ CHƯA ĐEO'}
+                  </span>
+                </div>
+
+                {/* 2. Áo bảo hộ màu xanh dương */}
+                <div className={`p-2.5 rounded-xl border flex items-center justify-between ${
+                  ['blue', 'cyan', 'white'].includes(uniformResult?.shirt_color)
+                    ? 'bg-emerald-950/70 border-emerald-500 text-emerald-200'
+                    : 'bg-slate-800/80 border-slate-700 text-slate-300'
+                }`}>
+                  <div className="flex items-center gap-2">
+                    <span className="text-base">👔</span>
+                    <div>
+                      <div className="font-bold">2. Áo Bảo Hộ Xanh</div>
+                      <div className="text-[10px] opacity-75">Chuẩn màu xanh nông trại</div>
+                    </div>
+                  </div>
+                  <span className="font-bold text-[10px] uppercase px-2 py-0.5 rounded bg-slate-900 border border-slate-700">
+                    {uniformResult?.shirt_color ? uniformResult.shirt_color.toUpperCase() : 'QUÉT...'}
+                  </span>
+                </div>
+
+                {/* 3. Quần dài tối màu */}
+                <div className={`p-2.5 rounded-xl border flex items-center justify-between ${
+                  uniformResult?.pants_color === 'dark'
+                    ? 'bg-emerald-950/70 border-emerald-500 text-emerald-200'
+                    : 'bg-slate-800/80 border-slate-700 text-slate-300'
+                }`}>
+                  <div className="flex items-center gap-2">
+                    <span className="text-base">👖</span>
+                    <div>
+                      <div className="font-bold">3. Quần Dài Tối Màu</div>
+                      <div className="text-[10px] opacity-75">Quần đen / xanh đen</div>
+                    </div>
+                  </div>
+                  <span className="font-bold text-[10px] uppercase px-2 py-0.5 rounded bg-slate-900 border border-slate-700">
+                    {uniformResult?.pants_color ? uniformResult.pants_color.toUpperCase() : 'QUÉT...'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Status & Confirm */}
+              <div className="pt-1 space-y-2">
+                {uniformResult?.is_correct ? (
+                  <button
+                    onClick={() => handleFinalizeTwoStepCheckIn(identifiedStaff, uniformResult)}
+                    disabled={isFinalizingCheckin}
+                    className="w-full py-2.5 px-4 rounded-xl font-bold text-xs uppercase bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-md flex items-center justify-center gap-2 transition cursor-pointer"
+                  >
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Xác Nhận Đạt Chuẩn & Vào Ca</span>
+                  </button>
+                ) : (
+                  <p className="text-[11px] text-amber-300/90 text-center leading-relaxed">
+                    💡 Đứng lùi lại 1.5m - 2m và đeo khẩu trang y tế để hệ thống tự động xác nhận vào ca.
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* STEP 3: HOÀN TẤT VÀO CA */}
+          {checkinStep === 'completed' && (
+            <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-600 to-teal-700 text-white space-y-3 shadow-lg animate-in zoom-in-95">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-white text-emerald-600 font-black text-2xl flex items-center justify-center shadow">
+                  🎉
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider bg-white/20 px-2 py-0.5 rounded-full">
+                    Thành Công 100%
+                  </span>
+                  <h4 className="font-extrabold text-sm mt-0.5">
+                    {identifiedStaff?.staffName}
+                  </h4>
+                  <p className="text-[11px] text-emerald-100 font-mono">
+                    {new Date().toLocaleTimeString('vi-VN')} • Chuồng: {penName}
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-2.5 rounded-xl bg-black/15 text-xs space-y-1">
+                <div className="flex items-center gap-1.5 text-emerald-100">
+                  <span>✓</span>
+                  <span>Đã đối chiếu FaceID chính xác</span>
+                </div>
+                <div className="flex items-center gap-1.5 text-emerald-100">
+                  <span>✓</span>
+                  <span>Đạt chuẩn trang phục & khẩu trang an toàn sinh học</span>
+                </div>
+              </div>
+
+              <button
+                onClick={resetToStep1}
+                className="w-full py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider bg-white text-emerald-800 hover:bg-emerald-50 shadow transition flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <UserCheck className="w-4 h-4" />
+                <span>Tiếp tục người kế tiếp {autoResetTimer ? `(${autoResetTimer}s)` : ''}</span>
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ─────────────────────────────────────────────────────────────
+          4. FOOTER: STANDARD UNIFORM SPECIFICATION & ATTENDANCE LOGS
+      ───────────────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-5 pt-3 border-t border-slate-100">
+        {/* Cột Trái: Quy Chuẩn Trang Phục (Cố Định Mặc Định) & Dự Phòng (5 cols) */}
+        <div className="md:col-span-5 space-y-3">
+          {/* Card: Quy chuẩn đồng phục nông trại cố định (Khóa mặc định, không cần chọn) */}
+          <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/90 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-slate-800 font-bold text-xs">
+                <Shirt className="w-4 h-4 text-emerald-600" />
+                <span>Quy Chuẩn Đồng Phục Nông Trại (Cố Định)</span>
+              </div>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
+                Mặc Định
+              </span>
+            </div>
+
+            <p className="text-[11px] text-slate-500 leading-relaxed">
+              Hệ thống áp dụng duy nhất quy chuẩn trang phục bảo hộ nông trại đạt chuẩn an toàn sinh học:
+            </p>
+
+            <div className="space-y-1.5 text-[11px]">
+              <div className="flex items-center gap-2 p-1.5 bg-white rounded-lg border border-slate-200 text-slate-700">
+                <span>😷</span>
+                <span className="font-semibold">Khẩu trang y tế:</span>
+                <span className="text-slate-500">Màu xanh hoặc trắng, che kín mũi & miệng</span>
+              </div>
+              <div className="flex items-center gap-2 p-1.5 bg-white rounded-lg border border-slate-200 text-slate-700">
+                <span>👔</span>
+                <span className="font-semibold">Áo bảo hộ:</span>
+                <span className="text-slate-500">Áo sơ mi cộc tay màu xanh dương</span>
+              </div>
+              <div className="flex items-center gap-2 p-1.5 bg-white rounded-lg border border-slate-200 text-slate-700">
+                <span>👖</span>
+                <span className="font-semibold">Quần dài:</span>
+                <span className="text-slate-500">Quần sẫm màu (đen / xanh đen)</span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between pt-1">
+              <input
+                ref={uniformFileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleUniformFileUpload}
+                className="hidden"
+              />
+              <button
+                onClick={() => uniformFileInputRef.current?.click()}
+                className="text-[11px] font-semibold text-emerald-700 hover:text-emerald-800 flex items-center gap-1 cursor-pointer hover:underline"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                <span>Tải ảnh toàn thân để quét thử</span>
+              </button>
+            </div>
           </div>
 
-          {/* Quick Staff Selection & Manual Trigger */}
-          <div className="bg-fb-bg/70 p-3 rounded-xl border border-fb-divider space-y-2">
-            <label className="text-[11px] font-bold text-fb-muted uppercase tracking-wider block">
-              Chấm Công Thủ Công (Dự Phòng)
+          {/* Card: Chấm công thủ công dự phòng */}
+          <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/90 space-y-2">
+            <label className="text-xs font-bold text-slate-700 block">
+              Chấm Công Thủ Công (Dự Phòng Khi Không Dùng Máy Ảnh)
             </label>
             <div className="flex gap-2">
               <select
                 value={selectedStaffId}
                 onChange={(e) => setSelectedStaffId(e.target.value)}
-                className="flex-1 bg-white border border-slate-200 text-slate-800 text-xs rounded-lg px-2.5 py-2 font-medium focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                className="flex-1 bg-white border border-slate-300 text-slate-800 text-xs rounded-xl px-2.5 py-2 font-medium focus:outline-none focus:ring-1 focus:ring-emerald-500"
               >
                 {staffList.map((s) => (
                   <option key={s.id} value={s.id}>
@@ -1710,255 +1702,99 @@ export default function FeedStaffAttendance({
               <button
                 onClick={handleManualCheckIn}
                 disabled={isLoading || !selectedStaffId}
-                className="px-3.5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold text-xs rounded-lg shadow-sm transition shrink-0 flex items-center gap-1 disabled:opacity-50"
+                className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-sm transition shrink-0 flex items-center gap-1 disabled:opacity-50 cursor-pointer"
               >
                 <Zap className="w-3.5 h-3.5" />
                 <span>Ghi Nhận</span>
               </button>
             </div>
           </div>
+        </div>
 
-          {/* Live Headcount */}
-          <div className="bg-gradient-to-br from-cyan-50 to-teal-50 p-3 rounded-xl border border-cyan-200 flex flex-col justify-between">
-            <span className="text-[11px] font-bold text-cyan-900 uppercase tracking-wider block">
-              Nhân Lực Đang Trực
+        {/* Cột Phải: Nhật ký chấm công gần nhất (7 cols) */}
+        <div className="md:col-span-7 space-y-2">
+          <div className="flex items-center justify-between pb-1">
+            <span className="font-bold text-xs text-slate-800 flex items-center gap-1.5">
+              <Clock className="w-4 h-4 text-emerald-600" />
+              Nhật Ký Chấm Công Gần Nhất
             </span>
-            <div className="flex items-baseline justify-between mt-1">
-              <span className="text-2xl font-black text-cyan-800">
-                {activeStaffIds.size} <span className="text-xs font-normal text-cyan-700">/ {staffList.length} người</span>
-              </span>
-              <span className="text-[11px] text-cyan-600 font-medium">
-                Chuồng: <strong>{penName}</strong>
-              </span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 2 CONTENT: LIVE UNIFORM INSPECTION CONTROLS & TELEMETRY */}
-      {activeTab === 'uniform' && (
-        <div className="space-y-4">
-          {/* Uniform Rule Selector */}
-          <div className="bg-slate-900 text-slate-100 p-3.5 rounded-xl border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <Shirt className="w-4 h-4 text-cyan-400" />
-              <span className="text-xs font-bold text-cyan-300">
-                Quy Định Đồng Phục:
-              </span>
-            </div>
-
-            <div className="flex-1 max-w-md flex items-center gap-2">
-              <select
-                value={uniformRuleWeekday}
-                onChange={(e) => setUniformRuleWeekday(parseInt(e.target.value))}
-                className="w-full bg-slate-950 border border-slate-700 text-slate-200 text-xs rounded-lg px-2.5 py-1.5 font-medium focus:outline-none focus:ring-1 focus:ring-cyan-500"
-              >
-                <option value="-1">⭐ Trang phục bảo hộ chuẩn: Áo xanh dương + Quần tối + BẮT BUỘC KHẨU TRANG</option>
-                <option value="1">Thứ 3: Áo trắng + Quần tối màu</option>
-                <option value="2">Thứ 4: Áo trắng + Quần tối màu</option>
-                <option value="3">Thứ 5: Áo trắng + Quần tối màu</option>
-                <option value="4">Thứ 6: Áo Đoàn thanh niên (Xanh)</option>
-                <option value="0">Thứ 2: Trang phục Dân tộc</option>
-              </select>
-
-              <input
-                ref={uniformFileInputRef}
-                type="file"
-                accept="image/*"
-                onChange={handleUniformFileUpload}
-                className="hidden"
-              />
-              <button
-                onClick={() => uniformFileInputRef.current?.click()}
-                className="py-1.5 px-3 rounded-lg font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs transition flex items-center gap-1 shrink-0"
-                title="Tải ảnh toàn thân từ máy"
-              >
-                <Upload className="w-3.5 h-3.5" />
-                <span>Tải Ảnh Lên</span>
-              </button>
-            </div>
+            <span className="text-[11px] text-slate-500 font-medium">
+              {attendanceLogs.length} lượt gần nhất
+            </span>
           </div>
 
-          {/* Real-time Uniform Telemetry Cards (4 Cards: Mask + Shirt + Pants + Overall) */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5 text-xs">
-            {/* 1. Mask Card (BẮT BUỘC) */}
-            <div className={`p-3 rounded-xl border shadow-sm flex items-center justify-between transition ${
-              uniformResult?.mask?.has_mask
-                ? 'bg-emerald-50/70 border-emerald-200'
-                : 'bg-rose-50/70 border-rose-200'
-            }`}>
-              <div className="flex items-center gap-2">
-                <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-base ${
-                  uniformResult?.mask?.has_mask ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
-                }`}>
-                  😷
-                </div>
-                <div>
-                  <span className="font-bold text-slate-800 block text-xs">Khẩu Trang Y Tế</span>
-                  <span className="text-[10px] text-slate-500">Yêu cầu bắt buộc</span>
-                </div>
-              </div>
-              <div className="text-right">
-                <span className={`font-bold text-[10px] uppercase px-2 py-0.5 rounded-full ${
-                  uniformResult?.mask?.has_mask
-                    ? 'bg-emerald-600 text-white'
-                    : 'bg-rose-600 text-white'
-                }`}>
-                  {uniformResult?.mask?.has_mask 
-                    ? (uniformResult.mask.mask_color === 'blue' ? 'ĐÃ ĐEO (XANH)' : 'ĐÃ ĐEO') 
-                    : 'CHƯA ĐEO'}
-                </span>
-                <span className="text-[9px] text-slate-400 block mt-0.5">
-                  Tin cậy: {Math.round((uniformResult?.mask?.confidence || 0) * 100)}%
-                </span>
-              </div>
+          {attendanceLogs.length === 0 ? (
+            <div className="text-center py-8 text-xs text-slate-400 border border-dashed border-slate-200 rounded-2xl">
+              Chưa có lượt chấm công nào trong hôm nay.
             </div>
+          ) : (
+            <div className="max-h-56 overflow-y-auto space-y-2 pr-1 text-xs">
+              {attendanceLogs.map((log, idx) => {
+                const isCheckOut = log.check_type === 'check_out';
+                const createdDate = new Date(log.created_at || Date.now());
+                const timeStr = createdDate.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                const dateStr = createdDate.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
 
-            {/* 2. Shirt Card */}
-            <div className="p-3 rounded-xl bg-white border border-slate-200 shadow-sm flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-cyan-50 border border-cyan-200 flex items-center justify-center text-base">
-                  👔
-                </div>
-                <div>
-                  <span className="font-bold text-slate-800 block text-xs">Áo Xanh Dương</span>
-                  <span className="text-[10px] text-slate-500">Đúng quy định bảo hộ</span>
-                </div>
-              </div>
-              <div className="text-right">
-                <span className={`font-bold text-[10px] uppercase px-2 py-0.5 rounded ${
-                  uniformResult?.shirt_color === 'blue'
-                    ? 'bg-cyan-100 text-cyan-800 border border-cyan-300'
-                    : 'bg-slate-100 text-slate-700'
-                }`}>
-                  {uniformResult?.shirt_color || 'Chờ quét...'}
-                </span>
-                <span className="text-[9px] text-slate-400 block mt-0.5">
-                  Tỷ lệ: {intPercent(uniformResult?.shirt_ratio)}%
-                </span>
-              </div>
-            </div>
-
-            {/* 3. Pants Card */}
-            <div className="p-3 rounded-xl bg-white border border-slate-200 shadow-sm flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-amber-50 border border-amber-200 flex items-center justify-center text-base">
-                  👖
-                </div>
-                <div>
-                  <span className="font-bold text-slate-800 block text-xs">Quần Tối Màu</span>
-                  <span className="text-[10px] text-slate-500">Đen / Xanh đen</span>
-                </div>
-              </div>
-              <div className="text-right">
-                <span className={`font-bold text-[10px] uppercase px-2 py-0.5 rounded ${
-                  uniformResult?.pants_color === 'dark'
-                    ? 'bg-amber-100 text-amber-800 border border-amber-300'
-                    : 'bg-slate-100 text-slate-700'
-                }`}>
-                  {uniformResult?.pants_color || 'Chờ quét...'}
-                </span>
-                <span className="text-[9px] text-slate-400 block mt-0.5">
-                  Tỷ lệ: {intPercent(uniformResult?.pants_ratio)}%
-                </span>
-              </div>
-            </div>
-
-            {/* 4. Overall Status Card */}
-            <div className="p-3 rounded-xl bg-white border border-slate-200 shadow-sm flex flex-col justify-between">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-slate-800 text-xs">Kết Luận Trực Tiếp</span>
-                <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${
-                  uniformResult?.is_correct 
-                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' 
-                    : 'bg-rose-100 text-rose-800 border border-rose-300'
-                }`}>
-                  {uniformResult ? (uniformResult.is_correct ? 'ĐẠT CHUẨN' : 'VI PHẠM') : 'CHỜ DỮ LIỆU'}
-                </span>
-              </div>
-              <p className="text-[10px] text-slate-600 line-clamp-2 mt-1">
-                {uniformResult?.message || 'Bật máy ảnh để quét tự động'}
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* RECENT ATTENDANCE LOGS TABLE (Shared) */}
-      <div className="space-y-2 pt-2 border-t border-fb-divider">
-        <div className="flex items-center justify-between text-xs text-fb-muted">
-          <span className="font-bold uppercase tracking-wider flex items-center gap-1.5">
-            <Clock className="w-3.5 h-3.5 text-cyan-600" />
-            Nhật Ký Chấm Công Gần Nhất (24/7)
-          </span>
-          <span>{attendanceLogs.length} bản ghi</span>
-        </div>
-
-        {attendanceLogs.length === 0 ? (
-          <div className="text-center py-6 text-xs text-fb-muted border border-dashed border-fb-divider rounded-xl">
-            Chưa có lượt chấm công nào được ghi nhận. Hãy bật máy ảnh để nhận diện tự động!
-          </div>
-        ) : (
-          <div className="max-h-56 overflow-y-auto space-y-1.5 pr-1 text-xs">
-            {attendanceLogs.map((log, idx) => {
-              const isCheckOut = log.check_type === 'check_out';
-              const createdDate = new Date(log.created_at || Date.now());
-              const timeStr = createdDate.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-              const dateStr = createdDate.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
-
-              return (
-                <div 
-                  key={log.id || idx}
-                  className="flex items-center justify-between p-2 rounded-xl bg-fb-bg/60 border border-fb-divider hover:bg-fb-hover transition"
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <div className={`w-2 h-2 rounded-full shrink-0 ${isCheckOut ? 'bg-rose-500' : 'bg-emerald-500'}`} />
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-bold text-fb-text truncate">{log.staff_name}</span>
-                        <span className="text-[10px] text-fb-muted">({log.staff_id})</span>
+                return (
+                  <div 
+                    key={log.id || idx}
+                    className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 hover:bg-slate-100/80 border border-slate-200/80 transition"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold text-xs text-white shrink-0 ${
+                        isCheckOut ? 'bg-rose-500' : 'bg-emerald-600'
+                      }`}>
+                        {log.staff_name ? log.staff_name.charAt(0).toUpperCase() : 'N'}
                       </div>
-                      <span className="text-[10px] text-fb-muted block truncate">
-                        {log.note || 'Chấm công tự do'}
-                      </span>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-bold text-slate-900 truncate">{log.staff_name}</span>
+                          <span className="text-[11px] text-slate-500 font-mono">({log.staff_id})</span>
+                        </div>
+                        <span className="text-[10px] text-slate-500 block truncate">
+                          {log.note || 'Chấm công tự động'}
+                        </span>
+                      </div>
                     </div>
-                  </div>
 
-                  <div className="flex items-center gap-2 shrink-0 text-right">
-                    <span 
-                      className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
-                        isCheckOut 
-                          ? 'bg-rose-100 text-rose-800' 
-                          : 'bg-emerald-100 text-emerald-800'
-                      }`}
-                    >
-                      {isCheckOut ? 'Tan Ca' : 'Vào Ca'}
-                    </span>
-                    <div className="text-[10px] font-mono text-fb-muted">
-                      <div>{timeStr}</div>
-                      <div className="text-[9px] text-slate-400">{dateStr}</div>
+                    <div className="flex items-center gap-2.5 shrink-0 text-right">
+                      <span 
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-lg ${
+                          isCheckOut 
+                            ? 'bg-rose-100 text-rose-800' 
+                            : 'bg-emerald-100 text-emerald-800'
+                        }`}
+                      >
+                        {isCheckOut ? 'Tan Ca' : 'Vào Ca'}
+                      </span>
+                      <div className="text-[10px] font-mono text-slate-500">
+                        <div className="font-semibold text-slate-700">{timeStr}</div>
+                        <div className="text-[9px] text-slate-400">{dateStr}</div>
+                      </div>
                     </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* MODAL: ĐĂNG KÝ KHUÔN MẶT FACEID MỚI */}
+      {/* ─────────────────────────────────────────────────────────────
+          5. MODAL: ĐĂNG KÝ FACEID MỚI (Thanh lịch & chuẩn form)
+      ───────────────────────────────────────────────────────────── */}
       {isEnrollModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-slate-200 overflow-hidden text-slate-800 animate-in fade-in zoom-in-95 duration-150">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="bg-white rounded-3xl max-w-lg w-full shadow-2xl border border-slate-200 overflow-hidden text-slate-800">
             {/* Modal Header */}
-            <div className="px-5 py-4 bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-700 text-white flex items-center justify-between">
+            <div className="px-6 py-4 bg-gradient-to-r from-emerald-600 to-teal-600 text-white flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center">
+                <div className="w-8 h-8 rounded-xl bg-white/20 flex items-center justify-center">
                   <UserPlus className="w-4 h-4 text-white" />
                 </div>
                 <div>
-                  <h4 className="font-bold text-sm">Đăng Ký Khuôn Mặt Nhân Viên Mới</h4>
-                  <p className="text-[11px] text-emerald-100">Lưu dữ liệu nhận diện vào hệ thống nhân sự</p>
+                  <h4 className="font-bold text-sm">Đăng Ký FaceID Nhân Viên Mới</h4>
+                  <p className="text-[11px] text-emerald-100">Lưu dữ liệu nhận diện vào hệ thống</p>
                 </div>
               </div>
               <button 
@@ -1975,7 +1811,7 @@ export default function FeedStaffAttendance({
             </div>
 
             {/* Modal Body */}
-            <form onSubmit={handleEnrollSubmit} className="p-5 space-y-4">
+            <form onSubmit={handleEnrollSubmit} className="p-6 space-y-4">
               {enrollModalMsg && (
                 <div className={`p-3 rounded-xl text-xs font-semibold flex items-center gap-2 ${
                   enrollModalMsg.type === 'success'
@@ -1996,7 +1832,7 @@ export default function FeedStaffAttendance({
                     value={enrollStaffId}
                     onChange={(e) => setEnrollStaffId(e.target.value.toUpperCase())}
                     placeholder="VD: NV05"
-                    className="w-full text-xs font-semibold px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none uppercase"
+                    className="w-full text-xs font-semibold px-3 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-none uppercase"
                   />
                 </div>
                 <div>
@@ -2006,8 +1842,8 @@ export default function FeedStaffAttendance({
                     required
                     value={enrollStaffName}
                     onChange={(e) => setEnrollStaffName(e.target.value)}
-                    placeholder="VD: Nguyễn Văn C"
-                    className="w-full text-xs font-semibold px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                    placeholder="VD: Nguyễn Văn A"
+                    className="w-full text-xs font-semibold px-3 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                   />
                 </div>
               </div>
@@ -2018,7 +1854,7 @@ export default function FeedStaffAttendance({
                   <select
                     value={enrollRole}
                     onChange={(e) => setEnrollRole(e.target.value)}
-                    className="w-full text-xs font-medium px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white"
+                    className="w-full text-xs font-medium px-3 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white"
                   >
                     <option value="Kỹ thuật viên">Kỹ thuật viên</option>
                     <option value="Công nhân nhà kính">Công nhân nhà kính</option>
@@ -2034,14 +1870,14 @@ export default function FeedStaffAttendance({
                     value={enrollPenId}
                     onChange={(e) => setEnrollPenId(e.target.value)}
                     placeholder="VD: 123"
-                    className="w-full text-xs font-medium px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                    className="w-full text-xs font-medium px-3 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                   />
                 </div>
               </div>
 
               {/* Face Photo Section */}
               <div>
-                <label className="text-xs font-bold text-slate-700 block mb-1.5">Ảnh Chân Dung Khuôn Mặt (Chính diện, rõ nét) *</label>
+                <label className="text-xs font-bold text-slate-700 block mb-1.5">Ảnh Chân Dung Khuôn Mặt (Chính diện) *</label>
                 
                 <input
                   ref={enrollFileInputRef}
@@ -2051,9 +1887,8 @@ export default function FeedStaffAttendance({
                   className="hidden"
                 />
 
-                <div className="flex flex-col sm:flex-row items-center gap-3 p-3 border-2 border-dashed border-slate-200 rounded-xl bg-slate-50/50">
-                  {/* Preview avatar */}
-                  <div className="w-24 h-24 rounded-xl border border-slate-200 bg-slate-100 flex items-center justify-center overflow-hidden shrink-0 shadow-inner">
+                <div className="flex flex-col sm:flex-row items-center gap-3 p-3 border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50">
+                  <div className="w-24 h-24 rounded-2xl border border-slate-200 bg-slate-100 flex items-center justify-center overflow-hidden shrink-0 shadow-inner">
                     {enrollPreviewUrl ? (
                       <img src={enrollPreviewUrl} alt="Face preview" className="w-full h-full object-cover" />
                     ) : (
@@ -2061,59 +1896,58 @@ export default function FeedStaffAttendance({
                     )}
                   </div>
 
-                  {/* Buttons */}
                   <div className="space-y-2 flex-1 w-full">
                     <div className="flex gap-2">
                       <button
                         type="button"
                         onClick={() => enrollFileInputRef.current?.click()}
-                        className="flex-1 py-2 px-3 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm"
+                        className="flex-1 py-2 px-3 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
                       >
                         <Upload className="w-3.5 h-3.5" />
-                        <span>Chọn Ảnh Từ Máy</span>
+                        <span>Chọn Ảnh</span>
                       </button>
 
                       {isCameraActive && cameraMode === 'webcam' && (
                         <button
                           type="button"
                           onClick={handleCaptureEnrollFromWebcam}
-                          className="flex-1 py-2 px-3 rounded-lg bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm"
+                          className="flex-1 py-2 px-3 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
                         >
                           <Camera className="w-3.5 h-3.5" />
-                          <span>📸 Chụp Từ Máy Ảnh</span>
+                          <span>Chụp Từ Webcam</span>
                         </button>
                       )}
                     </div>
                     <p className="text-[10px] text-slate-500 leading-relaxed">
-                      💡 Mẹo: Chụp khuôn mặt rõ nét, chính diện để hệ thống phân tích đặc trưng nhận diện chính xác nhất.
+                      💡 Mẹo: Chụp khuôn mặt chính diện, rõ nét để hệ thống trích xuất đặc trưng nhận diện chính xác nhất.
                     </p>
                   </div>
                 </div>
               </div>
 
               {/* Modal Footer */}
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setIsEnrollModalOpen(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 transition"
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 transition cursor-pointer"
                 >
                   Hủy
                 </button>
                 <button
                   type="submit"
                   disabled={isEnrolling || !enrollStaffId || !enrollStaffName || !enrollFile}
-                  className="px-5 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center gap-2"
+                  className="px-5 py-2.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center gap-2 cursor-pointer"
                 >
                   {isEnrolling ? (
                     <>
                       <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                      <span>Đang trích xuất nhận diện...</span>
+                      <span>Đang lưu...</span>
                     </>
                   ) : (
                     <>
                       <CheckCircle2 className="w-3.5 h-3.5" />
-                      <span>Lưu & Kích Hoạt Nhận Diện</span>
+                      <span>Lưu & Kích Hoạt FaceID</span>
                     </>
                   )}
                 </button>
@@ -2124,10 +1958,4 @@ export default function FeedStaffAttendance({
       )}
     </div>
   );
-}
-
-function intPercent(val: any): number {
-  const n = parseFloat(val);
-  if (isNaN(n)) return 0;
-  return Math.round(n * 100);
 }

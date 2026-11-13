@@ -168,12 +168,34 @@ class StaffRepository:
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
 
+        # 1. Đảm bảo nhân sự đã có trong bảng staff trước để tránh lỗi Foreign Key Constraint
+        try:
+            self.client.table(self._staff_table).upsert({
+                "id": clean_id,
+                "name": staff_name.strip(),
+                "role": "Kỹ thuật viên",
+                "pen_id": pen_id.strip() if pen_id else "123",
+            }, on_conflict="id").execute()
+        except Exception as upsert_err:
+            logger.warning(f"Could not upsert staff {clean_id} into Supabase before attendance: {upsert_err}")
+
+        # 2. Ghi bản ghi vào bảng staff_attendance
         try:
             response = self.client.table(self._attendance_table).insert(record).execute()
-            if response.data:
+            if response.data and len(response.data) > 0:
+                logger.info(f"✅ Supabase staff_attendance logged successfully: {record['staff_id']} ({record['staff_name']})")
                 return response.data[0]
         except Exception as e:
-            logger.warning(f"Error logging attendance in Supabase: {e}. Storing in fallback.")
+            logger.warning(f"Error logging attendance in Supabase (with pen_id {pen_id}): {e}. Retrying with pen_id=None...")
+            try:
+                record_fallback = dict(record)
+                record_fallback["pen_id"] = None
+                res_fallback = self.client.table(self._attendance_table).insert(record_fallback).execute()
+                if res_fallback.data and len(res_fallback.data) > 0:
+                    logger.info(f"✅ Supabase staff_attendance logged (fallback pen_id=None): {record['staff_id']}")
+                    return res_fallback.data[0]
+            except Exception as e2:
+                logger.error(f"❌ Failed to insert staff_attendance to Supabase: {e2}")
 
         record["id"] = len(_ATTENDANCE_FALLBACK) + 1
         _ATTENDANCE_FALLBACK.insert(0, record)

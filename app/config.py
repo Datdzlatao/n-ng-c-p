@@ -14,8 +14,8 @@ class Settings(BaseSettings):
     PORT: int = 8000
 
     # Supabase settings
-    SUPABASE_URL: str = ""
-    SUPABASE_KEY: str = ""
+    SUPABASE_URL: str = "https://sopqsxhuitqcmnvosjeq.supabase.co"
+    SUPABASE_KEY: str = "sb_publishable_PdB8mBs-zLvYDpEXP-ds4A_YSktC8lm"
 
     # Google Gemini AI settings
     GEMINI_API_KEY: str = ""
