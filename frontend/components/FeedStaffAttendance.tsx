@@ -42,7 +42,6 @@ import {
   checkInStaffUpload,
   getVisionHealth,
   scanUniformUploadAPI,
-  liveScanStaffAPI,
   startCameraDeviceAPI,
   stopCameraDeviceAPI,
   getCameraLatestTelemetryAPI,
@@ -83,9 +82,6 @@ export default function FeedStaffAttendance({
   const autoResetIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const step2HoldCountRef = useRef<number>(0);
 
-  // Camera Mode: 'webcam' (Browser Live AI) vs 'hardware' (Server MJPEG Stream)
-  const [cameraMode, setCameraMode] = useState<'webcam' | 'hardware'>('webcam');
-
   // Staff & Attendance State
   const [staffList, setStaffList] = useState<any[]>([]);
   const [attendanceLogs, setAttendanceLogs] = useState<any[]>([]);
@@ -97,7 +93,7 @@ export default function FeedStaffAttendance({
   // Vision Health
   const [visionOnline, setVisionOnline] = useState<boolean>(false);
 
-  // Live Camera State
+  // Live Camera State (Server Camera Stream)
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [isLivePaused, setIsLivePaused] = useState(false);
   const [liveScanFps, setLiveScanFps] = useState<number>(0);
@@ -132,14 +128,8 @@ export default function FeedStaffAttendance({
   const enrollFileInputRef = useRef<HTMLInputElement>(null);
 
   // References
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const overlayCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const mediaStreamRef = useRef<MediaStream | null>(null);
-  const liveLoopIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const hardwarePollIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const isProcessingFrameRef = useRef<boolean>(false);
-  const frameCountRef = useRef<number>(0);
-  const lastFpsCalcTimeRef = useRef<number>(performance.now());
+  const isPollingRef = useRef<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const uniformFileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -217,81 +207,51 @@ export default function FeedStaffAttendance({
   }, []);
 
   // ─────────────────────────────────────────────────────────────
-  // WEBCAM CONTROLS
+  // SERVER CAMERA CONTROLS
   // ─────────────────────────────────────────────────────────────
   const startCamera = async () => {
     try {
       setStatusMessage(null);
+      setIsLoading(true);
+
+      const newKey = Date.now();
+      setHardwareStreamKey(newKey);
+      setHardwareStreamUrl(`${FACE_API_URL}/api/v1/camera/video_feed?overlay=true&t=${newKey}`);
 
       try {
-        await stopCameraDeviceAPI();
-        await new Promise(r => setTimeout(r, 200));
-      } catch (e) {}
+        await startCameraDeviceAPI('0', FIXED_UNIFORM_RULE);
+      } catch (e) {
+        console.warn('Server camera device start notice:', e);
+      }
 
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
-        audio: false
-      });
-
-      mediaStreamRef.current = stream;
-      setCameraMode('webcam');
       setIsCameraActive(true);
       setIsLivePaused(false);
-
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.onloadedmetadata = () => {
-          videoRef.current?.play().catch(console.error);
-        };
-      }
     } catch (err: any) {
-      console.warn('Webcam getUserMedia error:', err);
+      console.warn('Server camera start error:', err);
       setStatusMessage({
         type: 'error',
-        text: `Không thể mở máy ảnh trên thiết bị (${err.name || 'đang bận'}). Đang chuyển sang máy ảnh chuồng...`
+        text: `Không thể kết nối máy ảnh chuồng trại: ${err.message || err}`
       });
-      switchToHardwareMode();
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const stopCamera = () => {
-    if (mediaStreamRef.current) {
-      mediaStreamRef.current.getTracks().forEach(track => track.stop());
-      mediaStreamRef.current = null;
-    }
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
-    if (liveLoopIntervalRef.current) {
-      clearInterval(liveLoopIntervalRef.current);
-      liveLoopIntervalRef.current = null;
-    }
     if (hardwarePollIntervalRef.current) {
       clearInterval(hardwarePollIntervalRef.current);
       hardwarePollIntervalRef.current = null;
     }
-    if (cameraMode === 'hardware') {
-      stopCameraDeviceAPI().catch(() => {});
-    }
-    clearOverlayCanvas();
+    stopCameraDeviceAPI().catch(() => {});
     setIsCameraActive(false);
+    setIsLivePaused(false);
     setLiveScanFps(0);
+    setLiveLatencyMs(0);
     setLiveFaces([]);
   };
 
   const togglePauseLive = () => {
     setIsLivePaused(prev => !prev);
-    if (!isLivePaused) {
-      clearOverlayCanvas();
-    }
-  };
-
-  const clearOverlayCanvas = () => {
-    const canvas = overlayCanvasRef.current;
-    if (canvas) {
-      const ctx = canvas.getContext('2d');
-      if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
-    }
   };
 
   // ─────────────────────────────────────────────────────────────
@@ -386,374 +346,10 @@ export default function FeedStaffAttendance({
   }, [currentPenId, checkType, playSuccessChime, onNotification, isFinalizingCheckin]);
 
   // ─────────────────────────────────────────────────────────────
-  // LIVE CANVAS HUD RENDERING ENGINE
-  // ─────────────────────────────────────────────────────────────
-  const renderLiveHud = useCallback((faces: any[], uniform: any, currentStep: string) => {
-    const canvas = overlayCanvasRef.current;
-    const video = videoRef.current;
-    if (!canvas || !video) return;
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const vw = video.videoWidth || 640;
-    const vh = video.videoHeight || 480;
-    if (canvas.width !== vw || canvas.height !== vh) {
-      canvas.width = vw;
-      canvas.height = vh;
-    }
-
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    const getX = (origX: number, origW: number) => {
-      return vw - (origX + origW);
-    };
-
-    // 1. Draw Face Detection Boxes (Ưu tiên rõ nét ở Bước 1)
-    faces.forEach((f) => {
-      if (!f.location) return;
-      const [top, right, bottom, left] = f.location;
-      const boxW = right - left;
-      const boxH = bottom - top;
-      const boxX = getX(left, boxW);
-      const boxY = top;
-
-      const sid = f.student_id || f.staff_id || f.id;
-      const isKnown = Boolean(sid && sid !== 'UNKNOWN');
-      const isReal = f.liveness ? f.liveness.is_real : true;
-      const confPercent = Math.round((f.confidence || 0) * 100);
-
-      let strokeColor = '#10b981'; // Xanh lá: Hợp lệ & người thật
-      let tagBg = '#065f46';
-      let labelText = `${f.name || 'Nhân sự'} (${sid || ''}) • ${confPercent}%`;
-
-      if (!isReal) {
-        strokeColor = '#ef4444';
-        tagBg = '#991b1b';
-        labelText = `⚠️ CẢNH BÁO: ẢNH GIẢ MẠO`;
-      } else if (!isKnown) {
-        strokeColor = '#f59e0b';
-        tagBg = '#92400e';
-        labelText = `NGƯỜI LẠ [${confPercent}%]`;
-      }
-
-      // Khung viền phong cách công nghệ
-      ctx.lineWidth = 3;
-      ctx.strokeStyle = strokeColor;
-      ctx.shadowColor = strokeColor;
-      ctx.shadowBlur = 6;
-
-      const cornerLen = Math.min(20, boxW / 4, boxH / 4);
-      // Top-Left
-      ctx.beginPath();
-      ctx.moveTo(boxX, boxY + cornerLen);
-      ctx.lineTo(boxX, boxY);
-      ctx.lineTo(boxX + cornerLen, boxY);
-      ctx.stroke();
-
-      // Top-Right
-      ctx.beginPath();
-      ctx.moveTo(boxX + boxW - cornerLen, boxY);
-      ctx.lineTo(boxX + boxW, boxY);
-      ctx.lineTo(boxX + boxW, boxY + cornerLen);
-      ctx.stroke();
-
-      // Bottom-Left
-      ctx.beginPath();
-      ctx.moveTo(boxX, boxY + boxH - cornerLen);
-      ctx.lineTo(boxX, boxY + boxH);
-      ctx.lineTo(boxX + cornerLen, boxY + boxH);
-      ctx.stroke();
-
-      // Bottom-Right
-      ctx.beginPath();
-      ctx.moveTo(boxX + boxW - cornerLen, boxY + boxH);
-      ctx.lineTo(boxX + boxW, boxY + boxH);
-      ctx.lineTo(boxX + boxW, boxY + boxH - cornerLen);
-      ctx.stroke();
-
-      ctx.shadowBlur = 0;
-      ctx.fillStyle = isReal 
-        ? (isKnown ? 'rgba(16, 185, 129, 0.08)' : 'rgba(245, 158, 11, 0.08)') 
-        : 'rgba(239, 68, 68, 0.15)';
-      ctx.fillRect(boxX, boxY, boxW, boxH);
-
-      // Nhãn tên
-      ctx.font = '600 12px Inter, sans-serif';
-      const textMetrics = ctx.measureText(labelText);
-      const pillW = textMetrics.width + 16;
-      const pillH = 22;
-      const pillY = Math.max(4, boxY - pillH - 4);
-
-      ctx.fillStyle = tagBg;
-      ctx.beginPath();
-      ctx.roundRect(boxX, pillY, pillW, pillH, 6);
-      ctx.fill();
-
-      ctx.fillStyle = '#ffffff';
-      ctx.fillText(labelText, boxX + 8, pillY + 15);
-    });
-
-    // 2. Draw Uniform Inspection Boxes (Khi ở Bước 2)
-    if (uniform && uniform.person_detected) {
-      // Body Box
-      if (uniform.body_box) {
-        const [bx, by, bw, bh] = uniform.body_box;
-        const bodyX = getX(bx, bw);
-        const bodyY = by;
-        const isOk = Boolean(uniform.is_correct);
-        const bodyColor = isOk ? '#10b981' : '#f43f5e';
-
-        ctx.lineWidth = 2;
-        ctx.strokeStyle = bodyColor;
-        ctx.setLineDash([6, 3]);
-        ctx.strokeRect(bodyX, bodyY, bw, bh);
-        ctx.setLineDash([]);
-
-        const bodyTag = `TOÀN THÂN: ${isOk ? '✓ ĐẠT ĐỒNG PHỤC' : '✗ CHƯA ĐẠT'}`;
-        ctx.font = 'bold 11px Inter, sans-serif';
-        const btw = ctx.measureText(bodyTag).width + 12;
-        ctx.fillStyle = isOk ? '#065f46' : '#881337';
-        ctx.beginPath();
-        ctx.roundRect(bodyX, Math.max(4, bodyY - 20), btw, 18, 4);
-        ctx.fill();
-        ctx.fillStyle = '#ffffff';
-        ctx.fillText(bodyTag, bodyX + 6, Math.max(4, bodyY - 20) + 13);
-      }
-
-      // Shirt Box (Áo xanh bảo hộ)
-      if (uniform.shirt_box) {
-        const [sx, sy, sw, sh] = uniform.shirt_box;
-        const shirtX = getX(sx, sw);
-        const shirtColor = '#06b6d4';
-
-        ctx.lineWidth = 2;
-        ctx.strokeStyle = shirtColor;
-        ctx.strokeRect(shirtX, sy, sw, sh);
-
-        const shirtTag = `👔 ÁO XANH: ${uniform.shirt_color || 'N/A'}`;
-        ctx.font = 'bold 11px Inter, sans-serif';
-        const stw = ctx.measureText(shirtTag).width + 10;
-        ctx.fillStyle = '#164e63';
-        ctx.beginPath();
-        ctx.roundRect(shirtX, sy + 3, stw, 18, 4);
-        ctx.fill();
-        ctx.fillStyle = '#a5f3fc';
-        ctx.fillText(shirtTag, shirtX + 5, sy + 16);
-      }
-
-      // Pants Box (Quần tối màu)
-      if (uniform.pants_box) {
-        const [px, py, pw, ph] = uniform.pants_box;
-        const pantsX = getX(px, pw);
-        const pantsColor = '#f59e0b';
-
-        ctx.lineWidth = 2;
-        ctx.strokeStyle = pantsColor;
-        ctx.strokeRect(pantsX, py, pw, ph);
-
-        const pantsTag = `👖 QUẦN TỐI: ${uniform.pants_color || 'N/A'}`;
-        ctx.font = 'bold 11px Inter, sans-serif';
-        const ptw = ctx.measureText(pantsTag).width + 10;
-        ctx.fillStyle = '#78350f';
-        ctx.beginPath();
-        ctx.roundRect(pantsX, py + 3, ptw, 18, 4);
-        ctx.fill();
-        ctx.fillStyle = '#fde68a';
-        ctx.fillText(pantsTag, pantsX + 5, py + 16);
-      }
-
-      // Mask Box (Khẩu trang y tế - Chuẩn image.png/jpg)
-      if (uniform.mask && uniform.mask.mask_box) {
-        const [mx, my, mw, mh] = uniform.mask.mask_box;
-        const maskX = getX(mx, mw);
-        const hasMask = Boolean(uniform.mask.has_mask);
-        const maskStroke = hasMask ? '#10b981' : '#ef4444';
-
-        ctx.lineWidth = 2.5;
-        ctx.strokeStyle = maskStroke;
-        ctx.strokeRect(maskX, my, mw, mh);
-
-        const maskColorName = uniform.mask.mask_color === 'blue' ? 'XANH Y TẾ' : (uniform.mask.mask_color || '').toUpperCase();
-        const maskTag = hasMask
-          ? `😷 KHẨU TRANG: ĐÃ ĐEO (${maskColorName})`
-          : `⚠️ BẮT BUỘC: CHƯA ĐEO KHẨU TRANG!`;
-
-        ctx.font = 'bold 11px Inter, sans-serif';
-        const mtw = ctx.measureText(maskTag).width + 10;
-        ctx.fillStyle = hasMask ? '#065f46' : '#991b1b';
-        ctx.beginPath();
-        ctx.roundRect(maskX, Math.max(4, my - 20), mtw, 18, 4);
-        ctx.fill();
-        ctx.fillStyle = '#ffffff';
-        ctx.fillText(maskTag, maskX + 5, Math.max(4, my - 20) + 13);
-      }
-    }
-  }, []);
-
-  // ─────────────────────────────────────────────────────────────
-  // CONTINUOUS LIVE SCANNING LOOP (Webcam Mode)
+  // SERVER CAMERA AI REAL-TIME TELEMETRY POLLING LOOP
   // ─────────────────────────────────────────────────────────────
   useEffect(() => {
-    if (!isCameraActive || isLivePaused || cameraMode !== 'webcam') {
-      if (liveLoopIntervalRef.current) {
-        clearInterval(liveLoopIntervalRef.current);
-        liveLoopIntervalRef.current = null;
-      }
-      return;
-    }
-
-    const offscreenCanvas = document.createElement('canvas');
-    offscreenCanvas.width = 480;
-    offscreenCanvas.height = 360;
-    const offscreenCtx = offscreenCanvas.getContext('2d');
-
-    const runLiveScanTick = async () => {
-      if (isProcessingFrameRef.current) return;
-      if (!videoRef.current || videoRef.current.readyState < 2) return;
-
-      try {
-        isProcessingFrameRef.current = true;
-        const t0 = performance.now();
-
-        if (offscreenCtx) {
-          offscreenCtx.drawImage(videoRef.current, 0, 0, 480, 360);
-        }
-        const b64 = offscreenCanvas.toDataURL('image/jpeg', 0.65);
-
-        // Luôn sử dụng FIXED_UNIFORM_RULE = -1 (mặc định chuẩn nông trại giống image.jpg/png)
-        const res = await liveScanStaffAPI({
-          imageBase64: b64,
-          penId: currentPenId || '123',
-          checkType,
-          weekday: FIXED_UNIFORM_RULE,
-          autoCheckin: false,
-          returnAnnotated: false
-        });
-
-        const dt = Math.round(performance.now() - t0);
-        setLiveLatencyMs(dt);
-
-        frameCountRef.current += 1;
-        const now = performance.now();
-        if (now - lastFpsCalcTimeRef.current >= 1000) {
-          const fps = (frameCountRef.current * 1000) / (now - lastFpsCalcTimeRef.current);
-          setLiveScanFps(Math.round(fps * 10) / 10);
-          frameCountRef.current = 0;
-          lastFpsCalcTimeRef.current = now;
-        }
-
-        const faces = res.faces || [];
-        setLiveFaces(faces);
-
-        if (res.uniform) {
-          setUniformResult(res.uniform);
-        }
-
-        // BƯỚC 1: XÁC THỰC DANH TÍNH KHUÔN MẶT
-        if (checkinStep === 'step1_face' && !identifiedStaff) {
-          const valid = faces.find((f: any) => {
-            const sid = f.student_id || f.staff_id || f.id;
-            return sid && sid !== 'UNKNOWN' && (f.confidence || 0) >= 0.55 && (f.liveness ? f.liveness.is_real : true);
-          });
-          if (valid) {
-            playSuccessChime();
-            const sid = valid.student_id || valid.staff_id || valid.id;
-            const staffObj = {
-              staffId: sid,
-              staffName: valid.name || 'Nhân sự',
-              confidence: valid.confidence || 0.95,
-              isReal: valid.liveness ? valid.liveness.is_real : true,
-              detectedAt: Date.now()
-            };
-            setIdentifiedStaff(staffObj);
-            setSelectedStaffId(sid);
-            if (onNotification) {
-              onNotification('Xác thực khuôn mặt', `✅ Đã nhận diện ${staffObj.staffName}. Vui lòng bấm [Quét Trang Phục & Khẩu Trang]!`);
-            }
-          }
-        }
-
-        // BƯỚC 2: QUÉT TRANG PHỤC & KHẨU TRANG
-        if (checkinStep === 'step2_uniform' && identifiedStaff && !isFinalizingCheckin) {
-          if (res.uniform && res.uniform.is_correct) {
-            step2HoldCountRef.current += 1;
-            if (step2HoldCountRef.current >= 2) {
-              handleFinalizeTwoStepCheckIn(identifiedStaff, res.uniform);
-            }
-          } else {
-            step2HoldCountRef.current = 0;
-          }
-        }
-
-        renderLiveHud(faces, res.uniform, checkinStep);
-
-      } catch (err) {
-        // Drop failed frame silently
-      } finally {
-        isProcessingFrameRef.current = false;
-      }
-    };
-
-    liveLoopIntervalRef.current = setInterval(runLiveScanTick, 260);
-
-    return () => {
-      if (liveLoopIntervalRef.current) {
-        clearInterval(liveLoopIntervalRef.current);
-        liveLoopIntervalRef.current = null;
-      }
-    };
-  }, [
-    isCameraActive, 
-    isLivePaused, 
-    cameraMode, 
-    checkType, 
-    currentPenId, 
-    playSuccessChime, 
-    renderLiveHud, 
-    onNotification, 
-    checkinStep, 
-    identifiedStaff, 
-    isFinalizingCheckin, 
-    handleFinalizeTwoStepCheckIn
-  ]);
-
-  // ─────────────────────────────────────────────────────────────
-  // HARDWARE SERVER CAMERA MODE
-  // ─────────────────────────────────────────────────────────────
-  const switchToHardwareMode = async () => {
-    if (mediaStreamRef.current) {
-      mediaStreamRef.current.getTracks().forEach(track => track.stop());
-      mediaStreamRef.current = null;
-    }
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
-    clearOverlayCanvas();
-    setStatusMessage(null);
-    setCameraMode('hardware');
-    setIsCameraActive(true);
-    setIsLivePaused(false);
-
-    const newKey = Date.now();
-    setHardwareStreamKey(newKey);
-    setHardwareStreamUrl(`${FACE_API_URL}/api/v1/camera/video_feed?overlay=true&t=${newKey}`);
-
-    try {
-      await startCameraDeviceAPI('0', FIXED_UNIFORM_RULE);
-    } catch (e) {
-      console.warn('Hardware camera start warning:', e);
-    }
-  };
-
-  const switchToWebcamMode = () => {
-    stopCameraDeviceAPI().catch(() => {});
-    setCameraMode('webcam');
-    startCamera();
-  };
-
-  useEffect(() => {
-    if (cameraMode !== 'hardware' || !isCameraActive) {
+    if (!isCameraActive || isLivePaused) {
       if (hardwarePollIntervalRef.current) {
         clearInterval(hardwarePollIntervalRef.current);
         hardwarePollIntervalRef.current = null;
@@ -761,34 +357,79 @@ export default function FeedStaffAttendance({
       return;
     }
 
-    hardwarePollIntervalRef.current = setInterval(async () => {
+    const pollServerCamera = async () => {
+      if (isPollingRef.current) return;
+      isPollingRef.current = true;
+      const tStart = performance.now();
+
       try {
         const telemetry = await getCameraLatestTelemetryAPI();
+        const latency = Math.round(performance.now() - tStart);
+        setLiveLatencyMs(latency);
+
         if (telemetry) {
-          setLiveScanFps(telemetry.capture_fps || 0);
+          const fps = telemetry.ai_fps || telemetry.capture_fps || 0;
+          setLiveScanFps(Math.round(fps * 10) / 10);
+
           if (telemetry.uniform) {
             setUniformResult(telemetry.uniform);
           }
-          if (telemetry.faces && telemetry.faces.length > 0) {
-            setLiveFaces(telemetry.faces);
+
+          const faces = telemetry.faces || [];
+          if (faces.length > 0) {
+            setLiveFaces(faces);
+
+            // BƯỚC 1: XÁC THỰC DANH TÍNH KHUÔN MẶT
             if (checkinStep === 'step1_face' && !identifiedStaff) {
-              const vf = telemetry.faces.find((f: any) => f.student_id && f.student_id !== 'UNKNOWN');
+              const vf = faces.find((f: any) => {
+                const sid = f.student_id || f.staff_id || f.id;
+                const isReal = f.liveness ? f.liveness.is_real : true;
+                return sid && sid !== 'UNKNOWN' && (f.confidence || 0) >= 0.55 && isReal;
+              });
+
               if (vf) {
                 playSuccessChime();
-                setIdentifiedStaff({
-                  staffId: vf.student_id,
+                const sid = vf.student_id || vf.staff_id || vf.id;
+                const staffObj = {
+                  staffId: sid,
                   staffName: vf.name || 'Nhân sự',
                   confidence: vf.confidence || 0.95,
-                  isReal: true,
+                  isReal: vf.liveness ? vf.liveness.is_real : true,
                   detectedAt: Date.now()
-                });
-                setSelectedStaffId(vf.student_id);
+                };
+                setIdentifiedStaff(staffObj);
+                setSelectedStaffId(sid);
+                if (onNotification) {
+                  onNotification(
+                    'Xác thực khuôn mặt',
+                    `✅ Đã nhận diện ${staffObj.staffName}. Vui lòng bấm [Quét Trang Phục & Khẩu Trang]!`
+                  );
+                }
               }
             }
           }
+
+          // BƯỚC 2: QUÉT TRANG PHỤC & KHẨU TRANG
+          if (checkinStep === 'step2_uniform' && identifiedStaff && !isFinalizingCheckin) {
+            if (telemetry.uniform && telemetry.uniform.is_correct) {
+              step2HoldCountRef.current += 1;
+              if (step2HoldCountRef.current >= 2) {
+                handleFinalizeTwoStepCheckIn(identifiedStaff, telemetry.uniform);
+              }
+            } else {
+              step2HoldCountRef.current = 0;
+            }
+          }
         }
-      } catch (e) {}
-    }, 600);
+      } catch (e) {
+        // Drop network error frame silently
+      } finally {
+        isPollingRef.current = false;
+      }
+    };
+
+    // Polling tốc độ cao 180ms phản hồi tức thời
+    hardwarePollIntervalRef.current = setInterval(pollServerCamera, 180);
 
     return () => {
       if (hardwarePollIntervalRef.current) {
@@ -796,7 +437,16 @@ export default function FeedStaffAttendance({
         hardwarePollIntervalRef.current = null;
       }
     };
-  }, [cameraMode, isCameraActive, checkinStep, identifiedStaff, playSuccessChime]);
+  }, [
+    isCameraActive,
+    isLivePaused,
+    checkinStep,
+    identifiedStaff,
+    isFinalizingCheckin,
+    handleFinalizeTwoStepCheckIn,
+    playSuccessChime,
+    onNotification
+  ]);
 
   // ─────────────────────────────────────────────────────────────
   // MANUAL CHECK-IN & PHOTO UPLOAD FALLBACKS
@@ -922,25 +572,25 @@ export default function FeedStaffAttendance({
   // ─────────────────────────────────────────────────────────────
   // ENROLL FACEID
   // ─────────────────────────────────────────────────────────────
-  const handleCaptureEnrollFromWebcam = () => {
-    if (!videoRef.current) return;
-    const v = videoRef.current;
-    if (v.videoWidth === 0 || v.videoHeight === 0) return;
-    const canvas = document.createElement('canvas');
-    canvas.width = v.videoWidth;
-    canvas.height = v.videoHeight;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    ctx.translate(canvas.width, 0);
-    ctx.scale(-1, 1);
-    ctx.drawImage(v, 0, 0, canvas.width, canvas.height);
-    canvas.toBlob((blob) => {
-      if (blob) {
-        const file = new File([blob], `${enrollStaffId || 'face'}.jpg`, { type: 'image/jpeg' });
-        setEnrollFile(file);
-        setEnrollPreviewUrl(canvas.toDataURL('image/jpeg', 0.9));
+  const handleCaptureEnrollFromServerCamera = async () => {
+    try {
+      setIsLoading(true);
+      const res = await fetch(`${FACE_API_URL}/api/v1/camera/snapshot?overlay=false`);
+      if (!res.ok) {
+        throw new Error('Không thể chụp ảnh từ Camera Server');
       }
-    }, 'image/jpeg', 0.9);
+      const blob = await res.blob();
+      const file = new File([blob], `${enrollStaffId || 'face'}.jpg`, { type: 'image/jpeg' });
+      setEnrollFile(file);
+      setEnrollPreviewUrl(URL.createObjectURL(blob));
+    } catch (err: any) {
+      setEnrollModalMsg({
+        type: 'error',
+        text: `Lỗi chụp ảnh từ Camera Server: ${err.message || err}`
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleEnrollFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1202,24 +852,8 @@ export default function FeedStaffAttendance({
         {/* CAMERA VIEWPORT (8 cols) */}
         <div className="lg:col-span-7 xl:col-span-8 space-y-3">
           <div className="relative rounded-2xl overflow-hidden bg-slate-950 aspect-video max-h-[440px] flex items-center justify-center border border-slate-800 shadow-inner group">
-            {/* 1. Client Webcam Video Element */}
-            <video
-              ref={videoRef}
-              autoPlay
-              playsInline
-              muted
-              className={`w-full h-full object-cover ${isCameraActive && cameraMode === 'webcam' ? 'block' : 'hidden'}`}
-              style={{ transform: 'scaleX(-1)' }}
-            />
-
-            {/* 2. Client Live Canvas HUD Overlay */}
-            <canvas
-              ref={overlayCanvasRef}
-              className={`absolute inset-0 w-full h-full pointer-events-none ${isCameraActive && cameraMode === 'webcam' ? 'block' : 'hidden'}`}
-            />
-
-            {/* 3. Server Hardware MJPEG Video Stream */}
-            {isCameraActive && cameraMode === 'hardware' && (
+            {/* Server Hardware MJPEG Video Stream */}
+            {isCameraActive && (
               <img
                 key={hardwareStreamKey}
                 src={hardwareStreamUrl}
@@ -1235,7 +869,7 @@ export default function FeedStaffAttendance({
               />
             )}
 
-            {/* 4. Inactive Camera Placeholder */}
+            {/* Inactive Camera Placeholder */}
             {!isCameraActive && (
               <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center space-y-3 bg-gradient-to-b from-slate-900 to-slate-950 text-white">
                 <div className="w-14 h-14 rounded-2xl bg-slate-800 border border-slate-700 text-emerald-400 flex items-center justify-center shadow-lg">
@@ -1243,26 +877,20 @@ export default function FeedStaffAttendance({
                 </div>
                 <div>
                   <h4 className="font-bold text-sm text-slate-100">
-                    Máy Ảnh Đang Tắt • Sẵn Sàng Điểm Danh 24/7
+                    Camera Chuồng Trại Đang Tắt • Sẵn Sàng Quét AI 24/7
                   </h4>
                   <p className="text-xs text-slate-400 max-w-sm mt-1">
-                    Bật máy ảnh để tự động quét khuôn mặt và kiểm tra trang phục bảo hộ nông trại.
+                    Bật camera máy chủ để tự động nhận diện khuôn mặt và kiểm tra trang phục bảo hộ nông trại.
                   </p>
                 </div>
                 <div className="pt-2 flex flex-wrap gap-2.5 justify-center">
                   <button
                     onClick={startCamera}
-                    className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-md transition flex items-center gap-2 cursor-pointer"
+                    disabled={isLoading}
+                    className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-md transition flex items-center gap-2 cursor-pointer disabled:opacity-50"
                   >
                     <Camera className="w-4 h-4" />
-                    <span>Bật Máy Ảnh Máy Tính</span>
-                  </button>
-                  <button
-                    onClick={switchToHardwareMode}
-                    className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-semibold text-xs transition flex items-center gap-2 cursor-pointer"
-                  >
-                    <Video className="w-4 h-4 text-cyan-400" />
-                    <span>Dùng Camera Chuồng Trại</span>
+                    <span>{isLoading ? 'Đang Khởi Động Camera...' : 'Bật Camera Chuồng Trại'}</span>
                   </button>
                 </div>
               </div>
@@ -1274,7 +902,7 @@ export default function FeedStaffAttendance({
                 <div className="flex items-center gap-2">
                   <span className="flex items-center gap-1.5 bg-slate-900/80 backdrop-blur-md border border-slate-700 text-slate-200 text-[10px] font-semibold px-2.5 py-1 rounded-full shadow">
                     <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                    {cameraMode === 'webcam' ? 'Máy ảnh máy tính' : 'Camera chuồng trại'}
+                    Camera chuồng trại (Server AI)
                   </span>
                   <span className="bg-emerald-950/80 backdrop-blur-md border border-emerald-600 text-emerald-300 text-[10px] font-bold px-2 py-1 rounded-full">
                     {checkType === 'check_in' ? '🟢 Vào ca' : '🔴 Tan ca'}
@@ -1348,15 +976,6 @@ export default function FeedStaffAttendance({
                   >
                     {isLivePaused ? <Play className="w-3.5 h-3.5 text-emerald-600" /> : <Pause className="w-3.5 h-3.5" />}
                     <span>{isLivePaused ? 'Tiếp tục' : 'Tạm dừng'}</span>
-                  </button>
-
-                  <button
-                    onClick={cameraMode === 'webcam' ? switchToHardwareMode : switchToWebcamMode}
-                    className="text-xs px-2.5 py-1.5 rounded-xl font-semibold bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 transition flex items-center gap-1 cursor-pointer"
-                    title="Đổi nguồn máy ảnh"
-                  >
-                    <Video className="w-3.5 h-3.5 text-cyan-600" />
-                    <span>{cameraMode === 'webcam' ? 'Camera chuồng' : 'Webcam máy tính'}</span>
                   </button>
 
                   <button
@@ -1907,14 +1526,14 @@ export default function FeedStaffAttendance({
                         <span>Chọn Ảnh</span>
                       </button>
 
-                      {isCameraActive && cameraMode === 'webcam' && (
+                      {isCameraActive && (
                         <button
                           type="button"
-                          onClick={handleCaptureEnrollFromWebcam}
+                          onClick={handleCaptureEnrollFromServerCamera}
                           className="flex-1 py-2 px-3 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
                         >
                           <Camera className="w-3.5 h-3.5" />
-                          <span>Chụp Từ Webcam</span>
+                          <span>Chụp Từ Camera Server</span>
                         </button>
                       )}
                     </div>

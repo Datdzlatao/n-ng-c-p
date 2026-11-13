@@ -1244,14 +1244,14 @@ async def dashboard():
               </button>
             </div>
             <div>
-              <button id="btnToggleDashboardCam" onclick="toggleDashboardWebcam()" class="w-full py-1.5 bg-slate-800 hover:bg-slate-700 text-cyan-400 rounded-lg font-medium transition flex items-center justify-center gap-1">
-                📸 Bật Camera Quét Mặt 24/7
+              <button id="btnToggleDashboardCam" onclick="toggleDashboardServerCam()" class="w-full py-1.5 bg-slate-800 hover:bg-slate-700 text-cyan-400 rounded-lg font-medium transition flex items-center justify-center gap-1">
+                📸 Bật Camera Quét Mặt Server
               </button>
             </div>
             <div id="dashboardWebcamBox" class="hidden space-y-2">
-              <video id="dashboardVideo" autoplay playsinline muted class="w-full rounded-lg bg-black border border-cyan-800 aspect-video"></video>
+              <img id="dashboardServerCam" src="" alt="Camera Server" class="w-full rounded-lg bg-black border border-cyan-800 aspect-video object-contain" />
               <button onclick="captureDashboardFace()" class="w-full py-1.5 bg-gradient-to-r from-cyan-500 to-emerald-500 text-slate-950 font-bold rounded-lg shadow">
-                🎯 Chụp & Nhận Diện Chấm Công
+                🎯 Nhận Diện Chấm Công Tức Thì
               </button>
             </div>
             <div class="mt-2 border-t border-slate-800 pt-2">
@@ -1593,7 +1593,7 @@ async def dashboard():
     }
 
     let dashboardCheckType = 'check_in';
-    let dashboardStream = null;
+    let isDashboardCamActive = false;
 
     function setDashboardCheckType(type) {
       dashboardCheckType = type;
@@ -1608,59 +1608,61 @@ async def dashboard():
       }
     }
 
-    async function toggleDashboardWebcam() {
+    async function toggleDashboardServerCam() {
       const box = document.getElementById('dashboardWebcamBox');
       const btn = document.getElementById('btnToggleDashboardCam');
-      const video = document.getElementById('dashboardVideo');
+      const img = document.getElementById('dashboardServerCam');
 
-      if (dashboardStream) {
-        dashboardStream.getTracks().forEach(t => t.stop());
-        dashboardStream = null;
+      if (isDashboardCamActive) {
+        isDashboardCamActive = false;
+        img.src = '';
         box.classList.add('hidden');
-        btn.innerHTML = '📸 Bật Camera Quét Mặt 24/7';
+        btn.innerHTML = '📸 Bật Camera Quét Mặt Server';
         btn.classList.remove('text-rose-400');
         btn.classList.add('text-cyan-400');
+        fetch('/api/camera/stop', { method: 'POST' }).catch(() => {});
       } else {
         try {
-          dashboardStream = await navigator.mediaDevices.getUserMedia({ video: { width: 480, height: 360 } });
-          video.srcObject = dashboardStream;
+          await fetch('/api/camera/start', { method: 'POST' });
+          img.src = '/api/camera/video_feed?overlay=true&t=' + Date.now();
+          isDashboardCamActive = true;
           box.classList.remove('hidden');
-          btn.innerHTML = '🛑 Tắt Camera';
+          btn.innerHTML = '🛑 Tắt Camera Server';
           btn.classList.remove('text-cyan-400');
           btn.classList.add('text-rose-400');
         } catch (e) {
-          alert("Không thể mở webcam: " + e);
+          alert("Không thể kết nối camera server: " + e);
         }
       }
     }
 
     async function captureDashboardFace() {
-      const video = document.getElementById('dashboardVideo');
-      if (!video || !dashboardStream) return;
-      const canvas = document.createElement('canvas');
-      canvas.width = video.videoWidth || 480;
-      canvas.height = video.videoHeight || 360;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const b64 = canvas.toDataURL('image/jpeg', 0.85);
-
       try {
-        const res = await fetch('/api/staff/checkin', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            image_base64: b64, 
-            pen_id: currentPenId, 
-            check_type: dashboardCheckType,
-            note: 'Quét mặt trực tiếp qua Dashboard 24/7'
-          })
-        });
-        const data = await res.json();
-        showAlertPopup({
-          alert_type: "STAFF_CHECKIN",
-          message: `👤 ${data.message || 'Chấm công thành công'}`
-        });
-        await loadStaffAttendance();
+        const telRes = await fetch('/api/camera/latest');
+        const telData = await telRes.json();
+        const validFace = telData.faces && telData.faces.find(f => f.student_id && f.student_id !== 'UNKNOWN');
+        if (validFace) {
+          const res = await fetch('/api/staff/checkin', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              staff_id: validFace.student_id,
+              staff_name: validFace.name,
+              pen_id: currentPenId, 
+              check_type: dashboardCheckType,
+              confidence: validFace.confidence || 0.95,
+              note: 'Nhận diện tự động qua Camera Server 24/7'
+            })
+          });
+          const data = await res.json();
+          showAlertPopup({
+            alert_type: "STAFF_CHECKIN",
+            message: `👤 ${data.message || 'Chấm công thành công: ' + validFace.name}`
+          });
+          await loadStaffAttendance();
+        } else {
+          alert("Chưa phát hiện nhân sự trong khung hình camera server.");
+        }
       } catch (e) {
         alert("Lỗi khi quét mặt: " + e);
       }

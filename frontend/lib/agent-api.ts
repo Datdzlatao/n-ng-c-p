@@ -736,12 +736,18 @@ export async function getCameraStreamStatusAPI(): Promise<any> {
 
 export async function getCameraLatestTelemetryAPI(): Promise<any> {
   try {
-    const res = await fetch(`${FACE_API_URL}/api/v1/camera/latest`);
+    const res = await fetch(`${FACE_API_URL}/api/v1/camera/latest`, {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(800)
+    });
     if (res.ok) return await res.json();
   } catch {}
 
   try {
-    const res = await fetch(`${BACKEND_URL}/api/camera/latest`);
+    const res = await fetch(`${BACKEND_URL}/api/camera/latest`, {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(800)
+    });
     if (!res.ok) return null;
     return await res.json();
   } catch {
