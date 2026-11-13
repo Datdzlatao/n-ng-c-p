@@ -15,6 +15,13 @@ __pycache__/
 *.log
 logs/
 
+# Next.js Build Output
+.next/
+frontend/.next/
+frontend/out/
+*.tsbuildinfo
+frontend/tsconfig.tsbuildinfo
+
 # IDE
 .vscode/
 .idea/
