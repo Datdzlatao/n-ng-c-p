@@ -8,9 +8,8 @@ import {
   Stethoscope, 
   Sprout, 
   Calendar, 
-  Scale, 
+  CheckCircle2, 
   AlertCircle,
-  CheckCircle2,
   Droplet,
   Truck
 } from 'lucide-react';
@@ -67,10 +66,10 @@ export default function FeedLivestockCrops({
 
   return (
     <div className="bg-fb-card rounded-2xl shadow-fb-card border border-fb-divider p-4 mb-4">
-      {/* Header */}
+      {/* Tiêu đề & Nút thêm */}
       <div className="flex items-center justify-between pb-3 border-b border-fb-divider">
         <div className="flex items-center gap-2.5">
-          <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 text-xl shadow-inner">
+          <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-800 text-xl shadow-inner">
             {isLivestock ? '🐖' : '🌿'}
           </div>
           <div>
@@ -80,28 +79,27 @@ export default function FeedLivestockCrops({
             <p className="text-xs text-fb-muted">
               {isLivestock
                 ? `Tổng số: ${animals.length} cá thể đang theo dõi`
-                : `Tổng số: ${crops.length} luống / vụ mùa`}
+                : `Tổng số: ${crops.length} luống / vụ mùa canh tác`}
             </p>
           </div>
         </div>
 
         <button
           onClick={onOpenAddModal}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-semibold text-xs transition shadow"
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs transition shadow cursor-pointer"
         >
           <Plus className="w-4 h-4" />
           <span>{isLivestock ? 'Thêm Con Vật' : 'Thêm Cây Trồng'}</span>
         </button>
       </div>
 
-      {/* Content Area */}
+      {/* Nội dung danh sách */}
       <div className="mt-4">
         {isLivestock ? (
-          /* Livestock View */
           animals.length === 0 ? (
             <div className="text-center py-8 text-fb-muted text-sm border-2 border-dashed border-fb-divider rounded-xl">
               <span className="text-3xl block mb-2">🐖</span>
-              Chưa có vật nuôi nào trong chuồng này. Hãy bấm "+ Thêm Con Vật" để bắt đầu!
+              Chưa có vật nuôi nào trong chuồng này. Hãy bấm "+ Thêm Con Vật" để bắt đầu theo dõi!
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -111,7 +109,7 @@ export default function FeedLivestockCrops({
                     <th className="py-2.5 px-3 rounded-l-lg">Mã Thẻ</th>
                     <th className="py-2.5 px-3">Loài</th>
                     <th className="py-2.5 px-3">Cân Nặng / Mục Tiêu</th>
-                    <th className="py-2.5 px-3">Trạng Thái</th>
+                    <th className="py-2.5 px-3">Thể Trạng</th>
                     <th className="py-2.5 px-3 text-right rounded-r-lg">Thao Tác</th>
                   </tr>
                 </thead>
@@ -123,7 +121,7 @@ export default function FeedLivestockCrops({
 
                     return (
                       <tr key={a.id} className="hover:bg-fb-hover/50 transition">
-                        {/* ID */}
+                        {/* Mã định danh con vật */}
                         <td className="py-3 px-3 font-bold text-fb-text flex items-center gap-2">
                           <span className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center text-xs">
                             {a.species === 'Gà' ? '🐔' : a.species === 'Bò' ? '🐮' : '🐷'}
@@ -131,10 +129,10 @@ export default function FeedLivestockCrops({
                           <span>{a.id}</span>
                         </td>
 
-                        {/* Species */}
+                        {/* Loài */}
                         <td className="py-3 px-3 text-fb-muted font-medium">{a.species}</td>
 
-                        {/* Weight with Visual Progress */}
+                        {/* Cân nặng hiện tại và tiến độ xuất chuồng */}
                         <td className="py-3 px-3">
                           <div className="flex items-baseline gap-1 text-xs">
                             <strong className="text-fb-text">{a.weight} kg</strong>
@@ -142,13 +140,13 @@ export default function FeedLivestockCrops({
                           </div>
                           <div className="w-28 bg-slate-200 h-1.5 rounded-full mt-1.5 overflow-hidden">
                             <div
-                              className="h-full bg-emerald-500 rounded-full transition-all"
+                              className="h-full bg-emerald-600 rounded-full transition-all"
                               style={{ width: `${pct}%` }}
                             />
                           </div>
                         </td>
 
-                        {/* Status Badge */}
+                        {/* Huy hiệu thể trạng */}
                         <td className="py-3 px-3">
                           {pct >= 100 ? (
                             <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-600 text-white shadow-sm animate-pulse">
@@ -156,30 +154,30 @@ export default function FeedLivestockCrops({
                             </span>
                           ) : isSick ? (
                             <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-red-100 text-red-700">
-                              <AlertCircle className="w-3 h-3 text-red-500" /> Bỏ Ăn / Ốm
+                              <AlertCircle className="w-3 h-3 text-red-500" /> Biếng Ăn / Cần Chú Ý
                             </span>
                           ) : isSkinny ? (
                             <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-700">
                               <AlertCircle className="w-3 h-3 text-amber-500" /> Còi Cọc
                             </span>
                           ) : (
-                            <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
-                              <CheckCircle2 className="w-3 h-3 text-emerald-500" /> Khỏe Mạnh
+                            <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+                              <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Khỏe Mạnh
                             </span>
                           )}
                         </td>
 
-                        {/* Actions */}
+                        {/* Các nút thao tác */}
                         <td className="py-3 px-3 text-right">
                           <div className="flex items-center justify-end gap-1.5">
                             {onExportAnimal && (
                               <button
                                 onClick={() => onExportAnimal(a)}
-                                title="Xuất chuồng (Bán cá thể này)"
-                                className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition shadow-sm ${
+                                title="Bán hoặc xuất chuồng cá thể này"
+                                className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition shadow-sm cursor-pointer ${
                                   pct >= 100
                                     ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                                    : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-300'
+                                    : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300'
                                 }`}
                               >
                                 <Truck className="w-3.5 h-3.5" />
@@ -189,24 +187,27 @@ export default function FeedLivestockCrops({
 
                             <button
                               onClick={() => onOpenTracking(a.id)}
-                              title="Xem biểu đồ tăng trọng"
-                              className="p-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition border border-blue-200"
+                              title="Xem biểu đồ tăng trọng theo thời gian"
+                              className="p-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition border border-blue-200 cursor-pointer"
+                              aria-label="Xem biểu đồ tăng trọng"
                             >
                               <TrendingUp className="w-4 h-4" />
                             </button>
 
                             <button
                               onClick={() => onOpenHealth(a.id)}
-                              title="Hồ sơ y tế & Tiêm chủng"
-                              className="p-1.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 transition border border-red-200"
+                              title="Xem sổ theo dõi tiêm phòng và y tế"
+                              className="p-1.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 transition border border-red-200 cursor-pointer"
+                              aria-label="Xem sổ y tế"
                             >
                               <Stethoscope className="w-4 h-4" />
                             </button>
 
                             <button
                               onClick={() => onDeleteAnimal(a.id)}
-                              title="Xóa hồ sơ"
-                              className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition"
+                              title="Xóa thông tin cá thể này"
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition cursor-pointer"
+                              aria-label="Xóa hồ sơ cá thể"
                             >
                               <Trash2 className="w-4 h-4" />
                             </button>
@@ -220,7 +221,7 @@ export default function FeedLivestockCrops({
             </div>
           )
         ) : (
-          /* Cultivation View */
+          /* Giao diện xem cây trồng */
           crops.length === 0 ? (
             <div className="text-center py-8 text-fb-muted text-sm border-2 border-dashed border-fb-divider rounded-xl">
               <span className="text-3xl block mb-2">🌿</span>
@@ -240,13 +241,14 @@ export default function FeedLivestockCrops({
                         {c.name}
                       </h5>
                       <p className="text-xs text-fb-muted mt-0.5">
-                        Số lượng: <strong>{c.quantity} gốc</strong>
+                        Quy mô: <strong>{c.quantity} gốc / luống</strong>
                       </p>
                     </div>
 
                     <button
                       onClick={() => onDeleteCrop(c.id)}
-                      className="text-slate-400 hover:text-red-600 p-1 rounded"
+                      title="Xóa thông tin vụ mùa này"
+                      className="text-slate-400 hover:text-red-600 p-1 rounded cursor-pointer"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
@@ -254,24 +256,24 @@ export default function FeedLivestockCrops({
 
                   <div className="flex items-center gap-1.5 text-xs text-slate-500 mt-2">
                     <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                    <span>Ngày gieo: {c.planting_date || c.planted_at || 'Mới trồng'}</span>
+                    <span>Ngày gieo trồng: {c.planting_date || c.planted_at || 'Mới trồng'}</span>
                   </div>
 
                   <div className="flex gap-2 mt-3 pt-2.5 border-t border-fb-divider">
                     <button
                       onClick={() => onOpenCropTracking(c.id)}
-                      className="flex-1 py-1.5 px-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-semibold rounded-lg transition border border-emerald-200 flex items-center justify-center gap-1"
+                      className="flex-1 py-1.5 px-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold rounded-lg transition border border-emerald-200 flex items-center justify-center gap-1 cursor-pointer"
                     >
                       <TrendingUp className="w-3.5 h-3.5" />
-                      Tăng Trưởng
+                      Sinh Trưởng
                     </button>
 
                     <button
                       onClick={() => onOpenCropCare(c.id)}
-                      className="flex-1 py-1.5 px-2 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold rounded-lg transition border border-blue-200 flex items-center justify-center gap-1"
+                      className="flex-1 py-1.5 px-2 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold rounded-lg transition border border-blue-200 flex items-center justify-center gap-1 cursor-pointer"
                     >
                       <Droplet className="w-3.5 h-3.5" />
-                      Chăm Sóc
+                      Chăm Sóc & Tưới
                     </button>
                   </div>
                 </div>

@@ -2,8 +2,8 @@ import './globals.css';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'SmartFarmer - Bảng Tin Nông Trại Thông Minh',
-  description: 'Hệ thống Quản lý Nông Trại phong cách Facebook Feed với AI Agent Messenger',
+  title: 'Nông Trại Thông Minh - Hệ Thống Quản Lý Toàn Diện',
+  description: 'Hệ thống quản lý chuồng trại, cây trồng, vi khí hậu và chấm công điểm danh nhân viên bằng trí tuệ nhân tạo',
 };
 
 export default function RootLayout({

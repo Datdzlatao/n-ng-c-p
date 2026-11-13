@@ -401,7 +401,7 @@ export default function Home() {
                 const exists = prev.some((d) => isSameId(d.id, newDev.id));
                 return exists ? prev.map((d) => (isSameId(d.id, newDev.id) ? formatted : d)) : [...prev, formatted];
               });
-              showRealtimeNotification('devices', `Thiết bị ${newDev.name} đổi trạng thái sang ${newDev.is_active ? 'ON' : 'OFF'}`);
+              showRealtimeNotification('devices', `Thiết bị ${newDev.name} đổi trạng thái sang ${newDev.is_active ? 'BẬT' : 'TẮT'}`);
               await loadPenData(activePen);
             } else {
               setDevices((prev) => prev.filter((d) => !isSameId(d.id, newDev.id)));
@@ -706,21 +706,21 @@ export default function Home() {
             <div className="w-16 h-16 rounded-full bg-gradient-to-tr from-emerald-600 to-green-500 mx-auto flex items-center justify-center text-white shadow-lg mb-3">
               <Sprout className="w-9 h-9" />
             </div>
-            <h2 className="text-2xl font-extrabold text-fb-text tracking-tight">SmartFarmer</h2>
+            <h2 className="text-2xl font-extrabold text-fb-text tracking-tight">Nông Trại Thông Minh</h2>
             <p className="text-xs text-fb-muted mt-1">
-              Hệ Thống Bảng Tin Quản Lý Nông Trại Thông Minh & AI Messenger
+              Hệ Thống Quản Lý Nông Trại & Trợ Lý Trực Tuyến 24/7
             </p>
           </div>
 
           <form onSubmit={handleAuth} className="space-y-4">
             <div>
-              <label className="block text-xs font-bold text-fb-muted mb-1">Email Nông Dân</label>
+              <label className="block text-xs font-bold text-fb-muted mb-1">Email Người Quản Lý</label>
               <input
                 type="email"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="nongdan@trangtrai.vn"
+                placeholder="quanly@nongtrai.vn"
                 className="w-full bg-fb-bg text-sm rounded-xl px-3.5 py-2.5 border border-fb-divider focus:ring-2 focus:ring-emerald-500"
               />
             </div>
@@ -745,16 +745,16 @@ export default function Home() {
 
             <button
               type="submit"
-              className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm rounded-xl transition shadow"
+              className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm rounded-xl transition shadow cursor-pointer"
             >
-              {authMode === 'login' ? 'Vào Nông Trại' : 'Tạo Tài Khoản Nông Trại'}
+              {authMode === 'login' ? 'Đăng Nhập Quản Lý' : 'Tạo Tài Khoản Mới'}
             </button>
           </form>
 
           <div className="mt-4 pt-4 border-t border-fb-divider flex items-center justify-between text-xs">
             <button
               onClick={() => setAuthMode(authMode === 'login' ? 'register' : 'login')}
-              className="text-emerald-700 font-semibold hover:underline"
+              className="text-emerald-700 font-semibold hover:underline cursor-pointer"
             >
               {authMode === 'login' ? 'Chưa có tài khoản? Đăng ký ngay' : 'Đã có tài khoản? Đăng nhập'}
             </button>
@@ -764,9 +764,9 @@ export default function Home() {
                 setIsDemoMode(true);
                 loadInitialData();
               }}
-              className="text-fb-blue font-bold hover:underline flex items-center gap-1"
+              className="text-emerald-700 font-bold hover:underline flex items-center gap-1 cursor-pointer"
             >
-              <span>Vào Chế Độ Xem Nhanh</span>
+              <span>Trải Nghiệm Thử Nhanh</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </button>
           </div>
@@ -789,7 +789,7 @@ export default function Home() {
           currentPenIdRef.current = pId;
           loadPenData(pId);
         }}
-        userEmail={session?.user?.email || 'Nông Dân Demo'}
+        userEmail={session?.user?.email || 'Người Quản Lý Trang Trại'}
         onLogout={handleLogout}
         alerts={alertList}
         onOpenMessenger={() => setIsMessengerOpen(true)}
@@ -1165,7 +1165,7 @@ export default function Home() {
           </div>
           <div className="min-w-0">
             <span className="font-bold text-emerald-400 block text-[11px] uppercase tracking-wider">
-              Đồng Bộ Realtime • Không cần F5
+              Cập Nhật Tự Động • Thời Gian Thực
             </span>
             <span className="text-slate-200 text-xs block truncate mt-0.5">
               {realtimeToast.message}

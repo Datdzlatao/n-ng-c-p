@@ -154,7 +154,7 @@ export function ModalAddDevice({
   };
 
   return (
-    <ModalWrapper isOpen={isOpen} onClose={onClose} title="Thêm Thiết Bị IoT" icon="🎮">
+    <ModalWrapper isOpen={isOpen} onClose={onClose} title="Thêm Thiết Bị Chuồng Trại" icon="🎮">
       <form onSubmit={handleSubmit} className="space-y-3">
         <div>
           <label className="block text-xs font-semibold text-fb-muted mb-1">Mã thiết bị</label>
@@ -179,7 +179,7 @@ export function ModalAddDevice({
         </div>
 
         <div>
-          <label className="block text-xs font-semibold text-fb-muted mb-1">Chân GPIO (Pin)</label>
+          <label className="block text-xs font-semibold text-fb-muted mb-1">Chân Cắm Điều Khiển</label>
           <input
             type="number"
             value={pin}
@@ -192,13 +192,13 @@ export function ModalAddDevice({
           <button
             type="button"
             onClick={onClose}
-            className="flex-1 py-2 rounded-xl border border-fb-divider text-xs font-semibold hover:bg-fb-hover"
+            className="flex-1 py-2 rounded-xl border border-fb-divider text-xs font-semibold hover:bg-fb-hover cursor-pointer"
           >
             Hủy
           </button>
           <button
             type="submit"
-            className="flex-1 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow"
+            className="flex-1 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow cursor-pointer"
           >
             Lưu Thiết Bị
           </button>
@@ -536,7 +536,7 @@ export function ModalImport({
           <label className="block text-xs font-semibold text-fb-muted mb-1">Tên hàng hóa</label>
           <input
             type="text"
-            placeholder="VD: Cám Cò Pro Max, Phân NPK..."
+            placeholder="VD: Cám Cò Đậm Đặc, Phân NPK..."
             value={name}
             onChange={(e) => setName(e.target.value)}
             className="w-full bg-fb-bg text-sm rounded-xl px-3 py-2 border border-fb-divider"

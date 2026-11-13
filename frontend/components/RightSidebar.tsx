@@ -6,8 +6,6 @@ import {
   Plus, 
   Power, 
   Activity, 
-  CheckCircle, 
-  Clock, 
   Wind, 
   Droplet, 
   SunMedium,
@@ -44,27 +42,29 @@ export default function RightSidebar({
   onOpenAddDeviceModal,
   recentActivities = [],
 }: RightSidebarProps) {
+  const currentPenLabel = penName || 'Khu vực đang chọn';
+
   return (
     <aside className="w-64 lg:w-72 shrink-0 hidden xl:block space-y-4">
-      {/* IoT Devices Control Card */}
+      {/* Khối điều khiển thiết bị điện chuồng trại */}
       <div className="bg-fb-card rounded-2xl p-4 shadow-fb-card border border-fb-divider">
         <div className="flex items-center justify-between pb-2 border-b border-fb-divider mb-3">
           <div className="flex items-center gap-1.5">
             <Cpu className="w-4 h-4 text-emerald-600" />
-            <h4 className="font-bold text-sm text-fb-text">Thiết Bị Chuồng</h4>
+            <h4 className="font-bold text-sm text-fb-text">Thiết Bị Chuồng Trại</h4>
           </div>
 
           <button
             onClick={onOpenAddDeviceModal}
-            className="text-[11px] font-bold text-emerald-600 hover:text-emerald-700 flex items-center gap-0.5 hover:underline"
+            className="text-[11px] font-bold text-emerald-700 hover:text-emerald-800 flex items-center gap-0.5 hover:underline cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" />
-            Thêm
+            Thêm Mới
           </button>
         </div>
 
         <p className="text-[11px] text-fb-muted mb-3">
-          Điều khiển thiết bị IoT tại: <strong>{penName}</strong>
+          Điều khiển thiết bị tại: <strong className="text-fb-text">{currentPenLabel}</strong>
         </p>
 
         {devices.length === 0 ? (
@@ -83,8 +83,8 @@ export default function RightSidebar({
                   key={d.id}
                   className={`flex items-center justify-between p-2.5 rounded-xl border transition ${
                     d.is_active
-                      ? 'bg-emerald-50/70 border-emerald-300'
-                      : 'bg-fb-bg/50 border-fb-divider'
+                      ? 'bg-emerald-50/80 border-emerald-300'
+                      : 'bg-fb-bg/60 border-fb-divider'
                   }`}
                 >
                   <div className="flex items-center gap-2.5 min-w-0">
@@ -109,20 +109,22 @@ export default function RightSidebar({
                         {d.name}
                       </span>
                       <span className="text-[10px] text-fb-muted block">
-                        GPIO Pin: {d.pin ?? '--'}
+                        Cổng điều khiển: {d.pin ?? '--'}
                       </span>
                     </div>
                   </div>
 
-                  {/* iOS Style Toggle Switch */}
+                  {/* Nút công tắc bật tắt */}
                   <button
                     onClick={() => onToggleDevice(d.id, d.is_active)}
-                    className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors duration-200 focus:outline-none ${
+                    className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors duration-200 focus:outline-none cursor-pointer ${
                       d.is_active ? 'bg-emerald-600' : 'bg-slate-300'
                     }`}
+                    title={d.is_active ? 'Đang bật (Bấm để tắt)' : 'Đang tắt (Bấm để bật)'}
+                    aria-label={`Bật tắt ${d.name}`}
                   >
                     <div
-                      className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-200 flex items-center justify-center ${
+                      className={`bg-white w-4 h-4 rounded-full shadow transform transition-transform duration-200 flex items-center justify-center ${
                         d.is_active ? 'translate-x-5' : 'translate-x-0'
                       }`}
                     >
@@ -136,7 +138,7 @@ export default function RightSidebar({
         )}
       </div>
 
-      {/* Live Activity Feed Widget */}
+      {/* Nhật ký hoạt động gần đây */}
       <div className="bg-fb-card rounded-2xl p-4 shadow-fb-card border border-fb-divider">
         <div className="flex items-center gap-1.5 pb-2 border-b border-fb-divider mb-3">
           <Activity className="w-4 h-4 text-emerald-600" />
@@ -149,7 +151,7 @@ export default function RightSidebar({
               <div className="flex items-start gap-2 text-xs">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 mt-1.5 shrink-0" />
                 <div>
-                  <p className="font-semibold text-fb-text">Ghi nhận vi khí hậu ổn định</p>
+                  <p className="font-semibold text-fb-text">Khí hậu chuồng nuôi ổn định</p>
                   <p className="text-[11px] text-fb-muted">Nhiệt độ 28.5°C, Độ ẩm 72%</p>
                   <span className="text-[10px] text-slate-400">1 phút trước</span>
                 </div>
@@ -158,8 +160,8 @@ export default function RightSidebar({
               <div className="flex items-start gap-2 text-xs">
                 <span className="w-2 h-2 rounded-full bg-blue-500 mt-1.5 shrink-0" />
                 <div>
-                  <p className="font-semibold text-fb-text">Cho ăn buổi sáng</p>
-                  <p className="text-[11px] text-fb-muted">Đã xuất 15kg cám cò chuồng A1</p>
+                  <p className="font-semibold text-fb-text">Cho đàn ăn theo lịch</p>
+                  <p className="text-[11px] text-fb-muted">Đã xuất 15kg cám chuồng A1</p>
                   <span className="text-[10px] text-slate-400">25 phút trước</span>
                 </div>
               </div>
@@ -167,8 +169,8 @@ export default function RightSidebar({
               <div className="flex items-start gap-2 text-xs">
                 <span className="w-2 h-2 rounded-full bg-orange-500 mt-1.5 shrink-0" />
                 <div>
-                  <p className="font-semibold text-fb-text">The Watcher kiểm tra mùi</p>
-                  <p className="text-[11px] text-fb-muted">Chỉ số NH3 an toàn: 180 ppm</p>
+                  <p className="font-semibold text-fb-text">Kiểm tra nồng độ khí chuồng</p>
+                  <p className="text-[11px] text-fb-muted">Chỉ số khí an toàn: 180 ppm</p>
                   <span className="text-[10px] text-slate-400">40 phút trước</span>
                 </div>
               </div>

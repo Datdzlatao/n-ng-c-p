@@ -246,6 +246,15 @@ case "$ACTION" in
     start)
         start_all
         ;;
+    apis)
+        exec "$PROJECT_DIR/start_apis.sh" start
+        ;;
+    backend)
+        exec "$PROJECT_DIR/start_apis.sh" backend
+        ;;
+    ai)
+        exec "$PROJECT_DIR/start_apis.sh" ai
+        ;;
     stop)
         stop_all
         ;;
@@ -258,8 +267,13 @@ case "$ACTION" in
         show_status
         ;;
     *)
-        echo "Cách dùng: $0 {start|stop|restart|status}"
-        echo "Mặc định (không tham số) là: $0 start (chạy nền mode bg)"
+        echo "Cách dùng: $0 {start|apis|backend|ai|stop|restart|status}"
+        echo "  - Không tham số hoặc 'start': Khởi động cả 3 (Frontend + Backend + AI)"
+        echo "  - 'apis': Khởi động riêng 2 API Backend & AI (dành cho khi Frontend chạy Vercel)"
+        echo "  - 'backend': Khởi động riêng Backend FastAPI"
+        echo "  - 'ai': Khởi động riêng AI Vision Engine"
+        echo "  - 'stop': Tắt toàn bộ"
+        echo "  - 'status': Xem trạng thái hệ thống"
         exit 1
         ;;
 esac

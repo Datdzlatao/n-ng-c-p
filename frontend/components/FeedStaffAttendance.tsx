@@ -229,7 +229,7 @@ export default function FeedStaffAttendance({
       // Auto fallback to Server Camera mode if browser cannot open webcam (e.g. device busy or headless)
       setStatusMessage({
         type: 'error',
-        text: `Webcam trình duyệt không mở được (${err.name || 'bận'}). Tự động chuyển sang Camera AI Server (30 FPS)...`
+        text: `Máy ảnh trên trình duyệt không mở được (${err.name || 'đang bận'}). Tự động chuyển sang máy ảnh chuồng trại...`
       });
       switchToHardwareMode();
     }
@@ -299,7 +299,7 @@ export default function FeedStaffAttendance({
     setIsFinalizingCheckin(true);
     try {
       const maskColor = uniformData?.mask?.mask_color === 'blue' ? 'xanh y tế' : (uniformData?.mask?.mask_color || 'y tế');
-      const noteMsg = `Vào ca thành công (Quy trình 2 bước: FaceID + Khẩu trang ${maskColor} & Áo ${uniformData?.shirt_color || 'bảo hộ'} + Quần ${uniformData?.pants_color || 'tối màu'})`;
+      const noteMsg = `Vào ca thành công (Quy trình 2 bước: Nhận diện khuôn mặt + Khẩu trang ${maskColor} & Áo ${uniformData?.shirt_color || 'bảo hộ'} + Quần ${uniformData?.pants_color || 'tối màu'})`;
 
       await checkInStaff({
         staffId: staff.staffId,
@@ -405,18 +405,19 @@ export default function FeedStaffAttendance({
       const boxX = getX(left, boxW);
       const boxY = top;
 
-      const isKnown = f.student_id && f.student_id !== 'UNKNOWN';
+      const sid = f.student_id || f.staff_id || f.id;
+      const isKnown = Boolean(sid && sid !== 'UNKNOWN');
       const isReal = f.liveness ? f.liveness.is_real : true;
       const confPercent = Math.round((f.confidence || 0) * 100);
 
       let strokeColor = '#10b981'; // Green: Known & Real
       let tagBg = '#065f46';
-      let labelText = `${f.name || 'Nhân sự'} (${f.student_id || ''}) [${confPercent}%]`;
+      let labelText = `${f.name || 'Nhân sự'} (${sid || ''}) [${confPercent}%]`;
 
       if (!isReal) {
         strokeColor = '#ef4444'; // Red: Spoof
         tagBg = '#991b1b';
-        labelText = `⚠️ GIẢ MẠO: ${f.liveness?.status || 'SPOOF'}`;
+        labelText = `⚠️ CẢNH BÁO: ẢNH GIẢ MẠO`;
       } else if (!isKnown) {
         strokeColor = '#f59e0b'; // Amber: Unknown
         tagBg = '#92400e';
@@ -641,22 +642,24 @@ export default function FeedStaffAttendance({
         // BƯỚC 1: XÁC THỰC DANH TÍNH KHUÔN MẶT (BỎ KHẨU TRANG)
         // Hệ thống phát hiện khuôn mặt hợp lệ -> Ghi nhớ danh tính nhân sự A
         if (checkinStep === 'step1_face' && !identifiedStaff) {
-          const valid = faces.find((f: any) => 
-            f.student_id && f.student_id !== 'UNKNOWN' && (f.confidence || 0) >= 0.55 && (f.liveness ? f.liveness.is_real : true)
-          );
+          const valid = faces.find((f: any) => {
+            const sid = f.student_id || f.staff_id || f.id;
+            return sid && sid !== 'UNKNOWN' && (f.confidence || 0) >= 0.55 && (f.liveness ? f.liveness.is_real : true);
+          });
           if (valid) {
             playSuccessChime();
+            const sid = valid.student_id || valid.staff_id || valid.id;
             const staffObj = {
-              staffId: valid.student_id,
+              staffId: sid,
               staffName: valid.name || 'Nhân sự',
               confidence: valid.confidence || 0.95,
               isReal: valid.liveness ? valid.liveness.is_real : true,
               detectedAt: Date.now()
             };
             setIdentifiedStaff(staffObj);
-            setSelectedStaffId(valid.student_id);
+            setSelectedStaffId(sid);
             if (onNotification) {
-              onNotification('Xác thực FaceID', `✅ Đã nhận diện ${staffObj.staffName}. Vui lòng bấm [Bước tiếp theo] để quét trang phục!`);
+              onNotification('Xác thực khuôn mặt', `✅ Đã nhận diện ${staffObj.staffName}. Vui lòng bấm [Bước tiếp theo] để quét trang phục!`);
             }
           }
         }
@@ -751,19 +754,21 @@ export default function FeedStaffAttendance({
 
           // BƯỚC 1: NHẬN DIỆN MẶT TRÊN CAMERA HARDWARE (BỎ KHẨU TRANG)
           if (checkinStep === 'step1_face' && !identifiedStaff && telemetry.faces && telemetry.faces.length > 0) {
-            const valid = telemetry.faces.find((f: any) => 
-              f.student_id && f.student_id !== 'UNKNOWN' && (f.confidence || 0) >= 0.55 && (f.liveness ? f.liveness.is_real : true)
-            );
+            const valid = telemetry.faces.find((f: any) => {
+              const sid = f.student_id || f.staff_id || f.id;
+              return sid && sid !== 'UNKNOWN' && (f.confidence || 0) >= 0.55 && (f.liveness ? f.liveness.is_real : true);
+            });
             if (valid) {
               playSuccessChime();
+              const sid = valid.student_id || valid.staff_id || valid.id;
               setIdentifiedStaff({
-                staffId: valid.student_id,
+                staffId: sid,
                 staffName: valid.name || 'Nhân sự',
                 confidence: valid.confidence || 0.95,
                 isReal: valid.liveness ? valid.liveness.is_real : true,
                 detectedAt: Date.now()
               });
-              setSelectedStaffId(valid.student_id);
+              setSelectedStaffId(sid);
             }
           }
 
@@ -853,7 +858,7 @@ export default function FeedStaffAttendance({
       const msg = `✅ Đã nhận diện ảnh: ${staffName} (${staffId}). Vui lòng bấm [Bước tiếp theo] để quét trang phục bắt buộc!`;
       setStatusMessage({ type: 'success', text: msg });
       if (onNotification) {
-        onNotification('Xác thực FaceID', msg);
+        onNotification('Xác thực khuôn mặt', msg);
       }
     } catch (err: any) {
       setStatusMessage({
@@ -965,11 +970,11 @@ export default function FeedStaffAttendance({
       );
       setEnrollModalMsg({
         type: 'success',
-        text: res.message || `Đã đăng ký FaceID thành công cho ${enrollStaffName}!`
+        text: res.message || `Đã đăng ký khuôn mặt thành công cho ${enrollStaffName}!`
       });
       await fetchInitialData();
       if (onNotification) {
-        onNotification('Đăng ký FaceID', `Đã thêm thành công ${enrollStaffName} (${enrollStaffId})`);
+        onNotification('Đăng ký khuôn mặt', `Đã thêm thành công ${enrollStaffName} (${enrollStaffId})`);
       }
       setTimeout(() => {
         setIsEnrollModalOpen(false);
@@ -980,7 +985,7 @@ export default function FeedStaffAttendance({
     } catch (err: any) {
       setEnrollModalMsg({
         type: 'error',
-        text: err.message || 'Lỗi khi đăng ký FaceID. Vui lòng thử lại với ảnh rõ nét hơn.'
+        text: err.message || 'Lỗi khi đăng ký khuôn mặt. Vui lòng thử lại với ảnh rõ nét hơn.'
       });
     } finally {
       setIsEnrolling(false);
@@ -1021,13 +1026,13 @@ export default function FeedStaffAttendance({
           </div>
           <div>
             <h3 className="font-bold text-base text-fb-text flex items-center gap-2">
-              <span>Hệ Thống Quét Live Camera AI 24/7</span>
+              <span>Hệ Thống Quét Máy Ảnh Trực Tiếp 24/7</span>
               <span className="text-[10px] font-mono uppercase bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-bold">
-                Live Stream
+                Phát Trực Tiếp
               </span>
             </h3>
             <p className="text-xs text-fb-muted">
-              Bật camera là tự động quét liên tục thời gian thực • Nhận diện FaceID & Quét toàn thân kiểm tra đồng phục
+              Bật máy ảnh là tự động quét liên tục thời gian thực • Nhận diện khuôn mặt & Quét toàn thân kiểm tra đồng phục
             </p>
           </div>
         </div>
@@ -1042,21 +1047,21 @@ export default function FeedStaffAttendance({
             }`}
           >
             <span className={`w-2 h-2 rounded-full ${visionOnline ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
-            {visionOnline ? 'AI Vision Microservice (Online)' : 'Embedded AI Sẵn Sàng'}
+            {visionOnline ? 'Trí Tuệ Nhân Tạo: Trực Tuyến' : 'Hệ Thống Nhận Diện Sẵn Sàng'}
           </span>
 
-          {/* Button: Đăng ký FaceID mới */}
+          {/* Button: Đăng ký khuôn mặt mới */}
           <button
             onClick={() => {
               setEnrollStaffId(`NV${String(staffList.length + 1).padStart(2, '0')}`);
               setEnrollPenId(currentPenId || '123');
               setIsEnrollModalOpen(true);
             }}
-            className="text-xs px-3 py-1.5 rounded-xl font-bold bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-sm transition flex items-center gap-1.5"
-            title="Đăng ký thêm khuôn mặt mới vào hệ thống FaceID"
+            className="text-xs px-3 py-1.5 rounded-xl font-bold bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-sm transition flex items-center gap-1.5 cursor-pointer"
+            title="Đăng ký thêm khuôn mặt mới vào hệ thống điểm danh"
           >
             <UserPlus className="w-3.5 h-3.5" />
-            <span>+ Đăng Ký FaceID</span>
+            <span>+ Thêm Khuôn Mặt</span>
           </button>
 
           <button
@@ -1098,7 +1103,7 @@ export default function FeedStaffAttendance({
           </div>
           <span className="text-[11px] text-slate-400 font-mono">
             {checkinStep === 'step1_face' 
-              ? '👉 Bước 1: Xác Thực Danh Tính FaceID' 
+              ? '👉 Bước 1: Xác Thực Khuôn Mặt' 
               : checkinStep === 'step2_uniform' 
               ? '👉 Bước 2: Quét Trang Phục & Khẩu Trang' 
               : '🎉 Hoàn Tất Vào Ca 100%'}
@@ -1110,7 +1115,7 @@ export default function FeedStaffAttendance({
           {/* STEP 1 PILL */}
           <button
             onClick={() => { setCheckinStep('step1_face'); setActiveTab('attendance'); }}
-            className={`p-3 rounded-xl border text-left transition flex items-center justify-between ${
+            className={`p-3 rounded-xl border text-left transition flex items-center justify-between cursor-pointer ${
               checkinStep === 'step1_face'
                 ? 'bg-emerald-950/80 border-emerald-400 shadow-[0_0_20px_rgba(16,185,129,0.3)]'
                 : identifiedStaff
@@ -1130,11 +1135,11 @@ export default function FeedStaffAttendance({
               </div>
               <div>
                 <div className="font-bold text-xs flex items-center gap-1.5 text-white">
-                  <span>Bước 1: Xác Thực FaceID</span>
+                  <span>Bước 1: Xác Thực Khuôn Mặt</span>
                   <span className="text-[10px] text-emerald-400 font-normal">(Bỏ khẩu trang)</span>
                 </div>
                 <div className="text-[10px] text-slate-400">
-                  {identifiedStaff ? `Đã nhận diện: ${identifiedStaff.staffName} (${identifiedStaff.staffId})` : 'Đứng trước camera nhận diện danh tính'}
+                  {identifiedStaff ? `Đã nhận diện: ${identifiedStaff.staffName} (${identifiedStaff.staffId})` : 'Đứng trước máy ảnh để nhận diện'}
                 </div>
               </div>
             </div>
@@ -1212,7 +1217,7 @@ export default function FeedStaffAttendance({
               </h4>
               <p className="text-xs text-amber-300 font-medium flex items-center gap-1.5 mt-1">
                 <span>😷</span>
-                <span><strong>Yêu cầu bắt buộc:</strong> Vui lòng <u>đeo khẩu trang y tế</u> và lùi lại để camera quét trang phục!</span>
+                <span><strong>Yêu cầu bắt buộc:</strong> Vui lòng <u>đeo khẩu trang y tế</u> và lùi lại để máy ảnh quét trang phục!</span>
               </p>
             </div>
           </div>
@@ -1241,7 +1246,7 @@ export default function FeedStaffAttendance({
           <div className="flex items-center gap-2">
             <span className="text-base">💡</span>
             <span>
-              <strong>Bước 1/2:</strong> Nhân sự đứng trước camera, <strong>bỏ khẩu trang</strong> để AI nhận diện FaceID. Sau khi nhận diện, hệ thống sẽ mở nút <strong>Bước tiếp theo</strong> để quét trang phục bắt buộc.
+              <strong>Bước 1/2:</strong> Nhân sự đứng trước máy ảnh, <strong>bỏ khẩu trang</strong> để hệ thống nhận diện khuôn mặt. Sau khi nhận diện, hệ thống sẽ mở nút <strong>Bước tiếp theo</strong> để quét trang phục bắt buộc.
             </span>
           </div>
           <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full shrink-0">
@@ -1344,7 +1349,7 @@ export default function FeedStaffAttendance({
                 </span>
               ) : (
                 <span className="text-slate-400">
-                  Đứng lùi lại cách camera 1.5m - 2m để quét toàn thân (áo + quần + khẩu trang).
+                  Đứng lùi lại cách máy ảnh 1.5m - 2m để quét toàn thân (áo + quần + khẩu trang).
                 </span>
               )}
             </div>
@@ -1382,7 +1387,7 @@ export default function FeedStaffAttendance({
                 Vào Ca Thành Công: {identifiedStaff?.staffName} ({identifiedStaff?.staffId})
               </h3>
               <p className="text-xs text-emerald-300 font-medium mt-0.5">
-                ✓ Đã xác thực FaceID &nbsp;•&nbsp; ✓ Đã kiểm tra khẩu trang y tế &nbsp;•&nbsp; ✓ Đạt chuẩn trang phục bảo hộ 100%
+                ✓ Đã xác thực khuôn mặt &nbsp;•&nbsp; ✓ Đã kiểm tra khẩu trang y tế &nbsp;•&nbsp; ✓ Đạt chuẩn trang phục bảo hộ 100%
               </p>
             </div>
           </div>
@@ -1390,39 +1395,39 @@ export default function FeedStaffAttendance({
           <div className="flex items-center gap-2.5 w-full sm:w-auto">
             <button
               onClick={resetToStep1}
-              className="flex-1 sm:flex-none px-6 py-3 rounded-xl font-bold text-xs uppercase tracking-wider bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-lg transition flex items-center justify-center gap-2"
+              className="flex-1 sm:flex-none px-6 py-3 rounded-xl font-bold text-xs uppercase tracking-wider bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-lg transition flex items-center justify-center gap-2 cursor-pointer"
             >
               <UserCheck className="w-4 h-4" />
-              <span>Tiếp Tục Nhân Sự Tiếp Theo {autoResetTimer ? `(${autoResetTimer}s)` : ''}</span>
+              <span>Tiếp Tục Người Kế Tiếp {autoResetTimer ? `(${autoResetTimer}s)` : ''}</span>
             </button>
           </div>
         </div>
       )}
 
-      {/* FUNCTION TAB SWITCHER: FaceID Attendance vs Full-Body Uniform */}
+      {/* FUNCTION TAB SWITCHER: Face Attendance vs Full-Body Uniform */}
       <div className="flex p-1 bg-slate-100 rounded-xl gap-1">
         <button
           onClick={() => { setActiveTab('attendance'); setCheckinStep('step1_face'); }}
-          className={`flex-1 py-2 rounded-lg text-xs font-bold transition flex items-center justify-center gap-2 ${
+          className={`flex-1 py-2 rounded-lg text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer ${
             activeTab === 'attendance'
               ? 'bg-white text-emerald-800 shadow-sm'
               : 'text-slate-600 hover:text-slate-900'
           }`}
         >
           <UserCheck className="w-4 h-4 text-emerald-600" />
-          <span>👤 Điểm Danh FaceID (Bước 1)</span>
+          <span>👤 Điểm Danh Khuôn Mặt (Bước 1)</span>
         </button>
 
         <button
           onClick={() => { setActiveTab('uniform'); if (identifiedStaff) setCheckinStep('step2_uniform'); }}
-          className={`flex-1 py-2 rounded-lg text-xs font-bold transition flex items-center justify-center gap-2 ${
+          className={`flex-1 py-2 rounded-lg text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer ${
             activeTab === 'uniform'
               ? 'bg-white text-cyan-800 shadow-sm'
               : 'text-slate-600 hover:text-slate-900'
           }`}
         >
           <Shirt className="w-4 h-4 text-cyan-600" />
-          <span>👔 Quét Toàn Thân & Đồng Phục (Bước 2)</span>
+          <span>👔 Kiểm Tra Trang Phục & Khẩu Trang (Bước 2)</span>
         </button>
       </div>
 
@@ -1433,10 +1438,10 @@ export default function FeedStaffAttendance({
           <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping" />
             <h4 className="font-bold text-sm text-cyan-300 flex items-center gap-2">
-              <span>Luồng Quét Live AI Thời Gian Thực</span>
+              <span>Luồng Quét Máy Ảnh Thời Gian Thực</span>
               {isCameraActive && (
                 <span className="text-[10px] bg-rose-950 text-rose-300 border border-rose-800 px-2 py-0.5 rounded-full font-mono uppercase">
-                  ● LIVE ({liveScanFps > 0 ? `${liveScanFps} FPS` : 'Đang quét...'})
+                  ● TRỰC TIẾP ({liveScanFps > 0 ? `${liveScanFps} khung hình/giây` : 'Đang quét...'})
                 </span>
               )}
             </h4>
@@ -1449,51 +1454,51 @@ export default function FeedStaffAttendance({
                 {/* Pause/Resume Live AI Scan */}
                 <button
                   onClick={togglePauseLive}
-                  className={`text-[11px] px-2.5 py-1 rounded-lg font-semibold transition flex items-center gap-1 ${
+                  className={`text-[11px] px-2.5 py-1 rounded-lg font-semibold transition flex items-center gap-1 cursor-pointer ${
                     isLivePaused 
                       ? 'bg-amber-600 hover:bg-amber-500 text-white' 
                       : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
                   }`}
                 >
                   {isLivePaused ? <Play className="w-3.5 h-3.5" /> : <Pause className="w-3.5 h-3.5" />}
-                  <span>{isLivePaused ? 'Tiếp Tục Quét' : 'Tạm Dừng Live'}</span>
+                  <span>{isLivePaused ? 'Tiếp Tục Quét' : 'Tạm Dừng'}</span>
                 </button>
 
                 {/* Source Switcher */}
                 <button
                   onClick={cameraMode === 'webcam' ? switchToHardwareMode : switchToWebcamMode}
-                  className="text-[11px] px-2.5 py-1 rounded-lg font-semibold bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 transition flex items-center gap-1"
-                  title="Chuyển đổi nguồn camera"
+                  className="text-[11px] px-2.5 py-1 rounded-lg font-semibold bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 transition flex items-center gap-1 cursor-pointer"
+                  title="Chuyển đổi nguồn máy ảnh"
                 >
                   <Video className="w-3.5 h-3.5" />
-                  <span>{cameraMode === 'webcam' ? 'Dùng Camera Server' : 'Dùng Webcam'}</span>
+                  <span>{cameraMode === 'webcam' ? 'Dùng Máy Ảnh Chuồng' : 'Dùng Máy Ảnh Máy Tính'}</span>
                 </button>
 
                 {/* Stop Camera */}
                 <button
                   onClick={stopCamera}
-                  className="text-[11px] px-3 py-1 rounded-lg font-semibold bg-rose-900/70 hover:bg-rose-800 text-rose-200 transition flex items-center gap-1 shadow"
+                  className="text-[11px] px-3 py-1 rounded-lg font-semibold bg-rose-900/70 hover:bg-rose-800 text-rose-200 transition flex items-center gap-1 shadow cursor-pointer"
                 >
                   <CameraOff className="w-3.5 h-3.5" />
-                  <span>Tắt Cam</span>
+                  <span>Tắt Máy Ảnh</span>
                 </button>
               </>
             ) : (
               <>
                 <button
                   onClick={startCamera}
-                  className="text-[11px] px-4 py-2 rounded-xl font-bold bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-lg transition flex items-center gap-2"
+                  className="text-[11px] px-4 py-2 rounded-xl font-bold bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-lg transition flex items-center gap-2 cursor-pointer"
                 >
                   <Camera className="w-4 h-4" />
-                  <span>Bật Webcam Trình Duyệt</span>
+                  <span>Bật Máy Ảnh Máy Tính</span>
                 </button>
 
                 <button
                   onClick={switchToHardwareMode}
-                  className="text-[11px] px-3.5 py-2 rounded-xl font-semibold bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 transition flex items-center gap-1.5"
+                  className="text-[11px] px-3.5 py-2 rounded-xl font-semibold bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 transition flex items-center gap-1.5 cursor-pointer"
                 >
                   <Video className="w-4 h-4" />
-                  <span>Mở Camera Server (30 FPS)</span>
+                  <span>Mở Máy Ảnh Chuồng Trại</span>
                 </button>
 
                 <input
@@ -1505,7 +1510,7 @@ export default function FeedStaffAttendance({
                 />
                 <button
                   onClick={() => fileInputRef.current?.click()}
-                  className="text-[11px] px-2.5 py-2 rounded-xl font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 transition flex items-center gap-1"
+                  className="text-[11px] px-2.5 py-2 rounded-xl font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 transition flex items-center gap-1 cursor-pointer"
                 >
                   <Upload className="w-3.5 h-3.5" />
                   <span>Tải ảnh</span>
@@ -1538,7 +1543,7 @@ export default function FeedStaffAttendance({
             <img
               key={hardwareStreamKey}
               src={hardwareStreamUrl}
-              alt="Luồng Camera AI Server 30 FPS"
+              alt="Luồng máy ảnh trực tiếp"
               className="w-full h-full object-contain"
               onError={() => {
                 // Tự động chuyển đổi giữa direct FACE_API_URL và BACKEND_URL proxy
@@ -1560,26 +1565,26 @@ export default function FeedStaffAttendance({
               </div>
               <div className="text-center space-y-1">
                 <h5 className="font-bold text-sm text-slate-200">
-                  Camera Đang Tắt • Sẵn Sàng Quét Live 24/7
+                  Máy Ảnh Đang Tắt • Sẵn Sàng Nhận Diện 24/7
                 </h5>
                 <p className="text-xs text-slate-400 max-w-md">
-                  Bấm một trong hai nút bên dưới để bắt đầu quét trực tiếp theo thời gian thực (Zero-click):
+                  Bấm một trong hai nút bên dưới để bắt đầu quét trực tiếp theo thời gian thực (tự động hoàn toàn):
                 </p>
               </div>
               <div className="pt-2 flex flex-wrap justify-center gap-2.5">
                 <button
                   onClick={startCamera}
-                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-white font-bold text-xs shadow-lg transition flex items-center gap-2"
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-white font-bold text-xs shadow-lg transition flex items-center gap-2 cursor-pointer"
                 >
                   <Camera className="w-4 h-4" />
-                  <span>Bật Webcam Trình Duyệt</span>
+                  <span>Bật Máy Ảnh Máy Tính</span>
                 </button>
                 <button
                   onClick={switchToHardwareMode}
-                  className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 font-bold text-xs transition flex items-center gap-2"
+                  className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 font-bold text-xs transition flex items-center gap-2 cursor-pointer"
                 >
                   <Video className="w-4 h-4" />
-                  <span>Mở Camera Server (30 FPS)</span>
+                  <span>Mở Máy Ảnh Chuồng Trại</span>
                 </button>
               </div>
             </div>
@@ -1591,7 +1596,7 @@ export default function FeedStaffAttendance({
               <div className="flex items-center gap-2">
                 <span className="flex items-center gap-1.5 bg-slate-900/80 backdrop-blur-md border border-slate-700 text-cyan-300 text-[10px] font-mono font-bold px-2.5 py-1 rounded-full shadow">
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                  {cameraMode === 'webcam' ? 'WEBCAM LIVE AI' : 'HARDWARE CAM 30 FPS'}
+                  {cameraMode === 'webcam' ? 'MÁY ẢNH MÁY TÍNH' : 'MÁY ẢNH CHUỒNG TRẠI'}
                 </span>
 
                 {activeTab === 'attendance' && (
@@ -1602,7 +1607,7 @@ export default function FeedStaffAttendance({
               </div>
 
               <div className="flex items-center gap-1.5 bg-slate-900/80 backdrop-blur-md border border-slate-700 text-slate-300 text-[10px] font-mono px-2.5 py-1 rounded-full shadow">
-                <span className="text-emerald-400 font-bold">{liveScanFps} FPS</span>
+                <span className="text-emerald-400 font-bold">{liveScanFps} khung hình/giây</span>
                 <span>•</span>
                 <span className="text-cyan-400">{liveLatencyMs}ms</span>
               </div>
@@ -1621,7 +1626,7 @@ export default function FeedStaffAttendance({
                     🎉 ĐÃ ĐIỂM DANH THÀNH CÔNG: {liveSuccessBanner.staffName} ({liveSuccessBanner.staffId})
                   </div>
                   <div className="text-[11px] text-emerald-300 font-medium">
-                    {liveSuccessBanner.type === 'check_out' ? 'Tan ca làm việc' : 'Vào ca làm việc'} • FaceID 100% người thật (Tự động ghi nhận)
+                    {liveSuccessBanner.type === 'check_out' ? 'Tan ca làm việc' : 'Vào ca làm việc'} • Xác thực người thật 100% (Tự động ghi nhận)
                   </div>
                 </div>
               </div>
@@ -1639,7 +1644,7 @@ export default function FeedStaffAttendance({
                 <span className={`w-2 h-2 rounded-full ${uniformResult.is_correct ? 'bg-emerald-400' : 'bg-rose-400'} animate-ping`} />
                 <span>
                   {uniformResult.is_correct 
-                    ? `✅ ĐẠT CHUẨN IMAGE.PNG (Khẩu trang + Áo ${uniformResult.shirt_color} + Quần ${uniformResult.pants_color})`
+                    ? `✅ ĐẠT CHUẨN ĐỒNG PHỤC (Khẩu trang + Áo ${uniformResult.shirt_color} + Quần ${uniformResult.pants_color})`
                     : uniformResult.mask && !uniformResult.mask.has_mask
                     ? '❌ VI PHẠM: CHƯA ĐEO KHẨU TRANG BẢO HỘ (BẮT BUỘC)'
                     : `❌ VI PHẠM: ${uniformResult.message || 'Không đúng quy định'}`}
@@ -1748,7 +1753,7 @@ export default function FeedStaffAttendance({
                 onChange={(e) => setUniformRuleWeekday(parseInt(e.target.value))}
                 className="w-full bg-slate-950 border border-slate-700 text-slate-200 text-xs rounded-lg px-2.5 py-1.5 font-medium focus:outline-none focus:ring-1 focus:ring-cyan-500"
               >
-                <option value="-1">⭐ Chuẩn image.png: Áo xanh dương + Quần tối + BẮT BUỘC KHẨU TRANG</option>
+                <option value="-1">⭐ Trang phục bảo hộ chuẩn: Áo xanh dương + Quần tối + BẮT BUỘC KHẨU TRANG</option>
                 <option value="1">Thứ 3: Áo trắng + Quần tối màu</option>
                 <option value="2">Thứ 4: Áo trắng + Quần tối màu</option>
                 <option value="3">Thứ 5: Áo trắng + Quần tối màu</option>
@@ -1766,10 +1771,10 @@ export default function FeedStaffAttendance({
               <button
                 onClick={() => uniformFileInputRef.current?.click()}
                 className="py-1.5 px-3 rounded-lg font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs transition flex items-center gap-1 shrink-0"
-                title="Tải ảnh toàn thân tĩnh từ máy"
+                title="Tải ảnh toàn thân từ máy"
               >
                 <Upload className="w-3.5 h-3.5" />
-                <span>Ảnh Tĩnh</span>
+                <span>Tải Ảnh Lên</span>
               </button>
             </div>
           </div>
@@ -1817,7 +1822,7 @@ export default function FeedStaffAttendance({
                 </div>
                 <div>
                   <span className="font-bold text-slate-800 block text-xs">Áo Xanh Dương</span>
-                  <span className="text-[10px] text-slate-500">Chuẩn image.png</span>
+                  <span className="text-[10px] text-slate-500">Đúng quy định bảo hộ</span>
                 </div>
               </div>
               <div className="text-right">
@@ -1862,7 +1867,7 @@ export default function FeedStaffAttendance({
             {/* 4. Overall Status Card */}
             <div className="p-3 rounded-xl bg-white border border-slate-200 shadow-sm flex flex-col justify-between">
               <div className="flex items-center justify-between">
-                <span className="font-bold text-slate-800 text-xs">Kết Luận Live</span>
+                <span className="font-bold text-slate-800 text-xs">Kết Luận Trực Tiếp</span>
                 <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${
                   uniformResult?.is_correct 
                     ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' 
@@ -1872,7 +1877,7 @@ export default function FeedStaffAttendance({
                 </span>
               </div>
               <p className="text-[10px] text-slate-600 line-clamp-2 mt-1">
-                {uniformResult?.message || 'Bật camera để quét live tự động'}
+                {uniformResult?.message || 'Bật máy ảnh để quét tự động'}
               </p>
             </div>
           </div>
@@ -1891,7 +1896,7 @@ export default function FeedStaffAttendance({
 
         {attendanceLogs.length === 0 ? (
           <div className="text-center py-6 text-xs text-fb-muted border border-dashed border-fb-divider rounded-xl">
-            Chưa có lượt chấm công nào được ghi nhận. Hãy bật camera để quét live!
+            Chưa có lượt chấm công nào được ghi nhận. Hãy bật máy ảnh để nhận diện tự động!
           </div>
         ) : (
           <div className="max-h-56 overflow-y-auto space-y-1.5 pr-1 text-xs">
@@ -1952,8 +1957,8 @@ export default function FeedStaffAttendance({
                   <UserPlus className="w-4 h-4 text-white" />
                 </div>
                 <div>
-                  <h4 className="font-bold text-sm">Đăng Ký Khuôn Mặt FaceID Mới</h4>
-                  <p className="text-[11px] text-emerald-100">Nạp dữ liệu vào AI Vision Engine & Hệ thống Nhân sự</p>
+                  <h4 className="font-bold text-sm">Đăng Ký Khuôn Mặt Nhân Viên Mới</h4>
+                  <p className="text-[11px] text-emerald-100">Lưu dữ liệu nhận diện vào hệ thống nhân sự</p>
                 </div>
               </div>
               <button 
@@ -2075,12 +2080,12 @@ export default function FeedStaffAttendance({
                           className="flex-1 py-2 px-3 rounded-lg bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm"
                         >
                           <Camera className="w-3.5 h-3.5" />
-                          <span>📸 Chụp Từ Cam</span>
+                          <span>📸 Chụp Từ Máy Ảnh</span>
                         </button>
                       )}
                     </div>
                     <p className="text-[10px] text-slate-500 leading-relaxed">
-                      💡 Mẹo: Chụp khuôn mặt rõ nét, không bị che khuất để AI trích xuất vector SFace chuẩn xác nhất.
+                      💡 Mẹo: Chụp khuôn mặt rõ nét, chính diện để hệ thống phân tích đặc trưng nhận diện chính xác nhất.
                     </p>
                   </div>
                 </div>
@@ -2103,12 +2108,12 @@ export default function FeedStaffAttendance({
                   {isEnrolling ? (
                     <>
                       <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                      <span>Đang trích xuất FaceID...</span>
+                      <span>Đang trích xuất nhận diện...</span>
                     </>
                   ) : (
                     <>
                       <CheckCircle2 className="w-3.5 h-3.5" />
-                      <span>Lưu & Kích Hoạt FaceID</span>
+                      <span>Lưu & Kích Hoạt Nhận Diện</span>
                     </>
                   )}
                 </button>

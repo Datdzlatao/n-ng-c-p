@@ -53,7 +53,7 @@ export default function MessengerChatBubble({
     {
       id: '1',
       sender: 'agent',
-      text: `Xin chào! Tôi là Trợ Lý Nông Trại AI kết nối FastMCP & Gemini. Tôi có thể giúp bạn kiểm tra vi khí hậu, bật tắt quạt, hoặc kiểm tra sức khỏe đàn nuôi. Bạn cần hỗ trợ gì?`,
+      text: `Kính chào bà con! Tôi là Trợ Lý Nông Trại Thông Minh 24/7. Tôi có thể hỗ trợ bà con theo dõi nhiệt độ môi trường, điều khiển quạt thông gió, kiểm tra sức khỏe đàn vật nuôi và quản lý kho vật tư. Bà con cần hỗ trợ gì hôm nay?`,
       time: 'Vừa xong',
     },
   ]);
@@ -83,7 +83,7 @@ export default function MessengerChatBubble({
           {
             id: '1',
             sender: 'agent',
-            text: `Xin chào! Tôi là Trợ Lý Nông Trại AI phụ trách chuồng ${penName || penId}. Tôi có thể giúp bạn kiểm tra vi khí hậu, bật tắt quạt, hoặc kiểm tra sức khỏe đàn nuôi.`,
+            text: `Kính chào bà con! Tôi là Trợ Lý Nông Trại phụ trách khu vực ${penName || penId}. Tôi có thể hỗ trợ bà con kiểm tra thời tiết trong chuồng, bật tắt quạt thông gió hoặc theo dõi đàn vật nuôi.`,
             time: 'Vừa xong',
           },
         ]);
@@ -151,13 +151,13 @@ export default function MessengerChatBubble({
       if (lower.includes('nhiệt') || lower.includes('môi trường') || lower.includes('mùi')) {
         reply = `📡 Thông số hiện tại tại ${penName}: Nhiệt độ: ${temp ?? 29}°C, Độ ẩm: ${hum ?? 70}%, Mùi chuồng: ${smell ?? 180} ppm. Môi trường đang ở ngưỡng ${temp && temp >= 35 ? 'CẢNH BÁO NÓNG' : 'ổn định an toàn'}.`;
       } else if (lower.includes('quạt') || lower.includes('bật') || lower.includes('tắt')) {
-        reply = `💨 Lệnh điều khiển thiết bị đã được gửi tới chuồng ${penName}. Hệ thống đã gửi tín hiệu qua FastMCP để kích hoạt quạt thông gió làm mát!`;
+        reply = `💨 Đã gửi lệnh điều khiển tới khu vực ${penName}. Hệ thống đang tự động kích hoạt quạt thông gió làm mát!`;
       } else if (lower.includes('heo') || lower.includes('vật nuôi') || lower.includes('bệnh') || lower.includes('ốm')) {
         reply = `🩺 Theo hồ sơ y tế mới nhất: Phát hiện 1 cá thể cần chú ý (sốt nhẹ). Các cá thể khác ăn uống bình thường và tăng trọng đạt chỉ tiêu.`;
       } else if (lower.includes('kho') || lower.includes('thức ăn') || lower.includes('cám')) {
         reply = `📦 Kho thức ăn: Cám Cò còn đủ dùng trong 3 ngày tới. Có 1 mặt hàng chạm ngưỡng tối thiểu, bạn nên lên lịch nhập thêm trước cuối tuần.`;
       } else {
-        reply = `🌾 Tôi đã ghi nhận yêu cầu: "${textToSend}". Hệ thống AI Agent đã đồng bộ dữ liệu với chuồng ${penName} qua giao thức MCP!`;
+        reply = `🌾 Đã ghi nhận yêu cầu: "${textToSend}". Hệ thống đã cập nhật dữ liệu với khu vực ${penName} thành công!`;
       }
 
       const agentMsg: ChatMessage = {
@@ -188,11 +188,11 @@ export default function MessengerChatBubble({
               </div>
 
               <div>
-                <h4 className="font-bold text-sm leading-tight">Trợ Lý Nông Trại AI</h4>
+                <h4 className="font-bold text-sm leading-tight">Trợ Lý Nông Trại</h4>
                 <p className="text-[11px] text-emerald-100 flex items-center gap-1">
-                  <span>FastMCP Agent</span>
+                  <span>Trực tuyến</span>
                   <span>•</span>
-                  <span>Đang hoạt động</span>
+                  <span>Sẵn sàng hỗ trợ</span>
                 </p>
               </div>
             </div>
@@ -200,13 +200,13 @@ export default function MessengerChatBubble({
             <div className="flex items-center gap-1">
               <button
                 onClick={onToggle}
-                className="w-7 h-7 rounded-full hover:bg-white/20 flex items-center justify-center text-white/90 transition"
+                className="w-7 h-7 rounded-full hover:bg-white/20 flex items-center justify-center text-white/90 transition cursor-pointer"
               >
                 <Minus className="w-4 h-4" />
               </button>
               <button
                 onClick={onToggle}
-                className="w-7 h-7 rounded-full hover:bg-white/20 flex items-center justify-center text-white/90 transition"
+                className="w-7 h-7 rounded-full hover:bg-white/20 flex items-center justify-center text-white/90 transition cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -231,7 +231,7 @@ export default function MessengerChatBubble({
 
                   <div className={`max-w-[75%] rounded-2xl px-3.5 py-2 text-xs shadow-sm ${
                     isUser
-                      ? 'bg-fb-blue text-white rounded-br-sm'
+                      ? 'bg-emerald-700 text-white rounded-br-sm'
                       : 'bg-white text-fb-text border border-slate-200 rounded-bl-sm leading-relaxed'
                   }`}>
                     <p className="whitespace-pre-line">{m.text}</p>
@@ -241,7 +241,7 @@ export default function MessengerChatBubble({
                           <div key={idx} className="bg-emerald-50 text-emerald-800 p-1.5 rounded-lg border border-emerald-200">
                             <span className="font-bold flex items-center gap-1">
                               <Wrench className="w-3 h-3 text-emerald-600" />
-                              Tool: {typeof t === 'string' ? t : t.tool}
+                              Hành động: {typeof t === 'string' ? t : t.tool}
                             </span>
                             {typeof t !== 'string' && t.result && (
                               <p className="text-[9px] text-slate-600 mt-0.5 line-clamp-2">{t.result}</p>
@@ -250,7 +250,7 @@ export default function MessengerChatBubble({
                         ))}
                       </div>
                     )}
-                    <span className={`text-[9px] block text-right mt-1 ${isUser ? 'text-blue-100' : 'text-slate-400'}`}>
+                    <span className={`text-[9px] block text-right mt-1 ${isUser ? 'text-emerald-200' : 'text-slate-400'}`}>
                       {m.time}
                     </span>
                   </div>
@@ -297,7 +297,7 @@ export default function MessengerChatBubble({
           >
             <input
               type="text"
-              placeholder="Nhập câu hỏi hoặc ra lệnh cho AI..."
+              placeholder="Nhập câu hỏi hoặc yêu cầu hỗ trợ..."
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               className="flex-1 bg-fb-bg text-xs rounded-full px-3.5 py-2 border border-fb-divider focus:outline-none focus:ring-2 focus:ring-emerald-500"
@@ -305,7 +305,7 @@ export default function MessengerChatBubble({
             <button
               type="submit"
               disabled={!inputValue.trim() || isLoading}
-              className="w-8 h-8 rounded-full bg-fb-blue hover:bg-fb-blueDark text-white flex items-center justify-center transition disabled:opacity-40 shadow-sm shrink-0"
+              className="w-8 h-8 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center transition disabled:opacity-40 shadow-sm shrink-0 cursor-pointer"
             >
               <Send className="w-3.5 h-3.5" />
             </button>
@@ -317,8 +317,8 @@ export default function MessengerChatBubble({
       <div className="relative">
         <button
           onClick={onToggle}
-          title="Mở Chat Messenger Nông Trại"
-          className="w-14 h-14 rounded-full bg-gradient-to-tr from-emerald-600 via-teal-600 to-green-500 hover:scale-105 transition-transform duration-200 text-white flex items-center justify-center shadow-xl border-2 border-white alert-pulse float-bubble"
+          title="Mở hộp thoại Trợ Lý Nông Trại"
+          className="w-14 h-14 rounded-full bg-gradient-to-tr from-emerald-600 via-teal-600 to-green-500 hover:scale-105 transition-transform duration-200 text-white flex items-center justify-center shadow-xl border-2 border-white alert-pulse float-bubble cursor-pointer"
         >
           {isOpen ? (
             <X className="w-6 h-6" />
@@ -331,8 +331,8 @@ export default function MessengerChatBubble({
         </button>
 
         {!isOpen && (
-          <span className="absolute -top-1.5 -right-1.5 bg-red-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow border-2 border-white">
-            AI
+          <span className="absolute -top-1.5 -right-1.5 bg-emerald-700 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full shadow border-2 border-white">
+            24/7
           </span>
         )}
       </div>

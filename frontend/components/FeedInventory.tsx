@@ -5,12 +5,7 @@ import {
   Package, 
   Search, 
   Plus, 
-  Minus, 
-  AlertTriangle, 
-  CheckCircle2, 
-  Filter,
-  ArrowDownRight,
-  ArrowUpRight
+  Minus 
 } from 'lucide-react';
 
 interface InventoryItem {
@@ -36,7 +31,7 @@ export default function FeedInventory({
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('All');
 
-  // Filter items
+  // Lọc danh mục vật tư
   const filtered = items.filter((item) => {
     const matchName = item.name.toLowerCase().includes(searchTerm.toLowerCase());
     const matchCat = categoryFilter === 'All' || item.category === categoryFilter;
@@ -45,7 +40,7 @@ export default function FeedInventory({
 
   return (
     <div className="bg-fb-card rounded-2xl shadow-fb-card border border-fb-divider p-4 mb-4">
-      {/* Header */}
+      {/* Tiêu đề & Nút xuất nhập */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between pb-3 border-b border-fb-divider gap-2">
         <div className="flex items-center gap-2.5">
           <div className="w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center text-orange-600 font-bold shadow-inner">
@@ -56,7 +51,7 @@ export default function FeedInventory({
               Kho Vật Tư & Thức Ăn Nông Trại
             </h4>
             <p className="text-xs text-fb-muted">
-              Đang quản lý {items.length} mặt hàng thức ăn & phân bón
+              Đang quản lý {items.length} mặt hàng thức ăn và phân bón
             </p>
           </div>
         </div>
@@ -64,7 +59,7 @@ export default function FeedInventory({
         <div className="flex items-center gap-2 w-full sm:w-auto">
           <button
             onClick={onOpenImport}
-            className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-semibold text-xs transition shadow"
+            className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs transition shadow cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             <span>Nhập Kho</span>
@@ -72,7 +67,7 @@ export default function FeedInventory({
 
           <button
             onClick={onOpenExport}
-            className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-semibold text-xs transition shadow"
+            className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3.5 py-1.5 bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-bold text-xs transition shadow cursor-pointer"
           >
             <Minus className="w-4 h-4" />
             <span>Xuất Dùng</span>
@@ -80,34 +75,35 @@ export default function FeedInventory({
         </div>
       </div>
 
-      {/* Filter & Search Bar */}
+      {/* Thanh tìm kiếm & bộ lọc */}
       <div className="flex flex-col sm:flex-row gap-2 my-3">
         <div className="relative flex-1">
           <Search className="w-4 h-4 text-fb-muted absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
-            placeholder="Tìm tên hàng (VD: Cám Cò, Ure...)"
+            placeholder="Tìm tên hàng (Ví dụ: Cám con cò, Phân Ure...)"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full bg-fb-bg text-sm rounded-xl pl-9 pr-3 py-2 border border-fb-divider focus:outline-none focus:ring-2 focus:ring-emerald-500 transition"
           />
         </div>
 
-        <div className="relative sm:w-44">
+        <div className="relative sm:w-48">
           <select
             value={categoryFilter}
             onChange={(e) => setCategoryFilter(e.target.value)}
-            className="w-full bg-fb-bg text-sm rounded-xl px-3 py-2 border border-fb-divider focus:outline-none focus:ring-2 focus:ring-emerald-500 transition cursor-pointer"
+            className="w-full bg-fb-bg text-sm rounded-xl px-3 py-2 border border-fb-divider focus:outline-none focus:ring-2 focus:ring-emerald-500 transition cursor-pointer font-medium"
+            aria-label="Lọc theo phân loại vật tư"
           >
             <option value="All">Tất cả phân loại</option>
-            <option value="Feed">🥩 Thức ăn</option>
-            <option value="Fertilizer">🌱 Phân bón</option>
-            <option value="Other">🛠️ Khác</option>
+            <option value="Feed">🥩 Thức ăn chăn nuôi</option>
+            <option value="Fertilizer">🌱 Phân bón & Dinh dưỡng</option>
+            <option value="Other">🛠️ Vật tư khác</option>
           </select>
         </div>
       </div>
 
-      {/* Inventory Item List */}
+      {/* Danh sách vật tư */}
       <div className="max-h-72 overflow-y-auto space-y-2 pr-1">
         {filtered.length === 0 ? (
           <div className="text-center py-6 text-fb-muted text-sm">
@@ -139,7 +135,11 @@ export default function FeedInventory({
                   <div>
                     <span className="font-bold text-sm text-fb-text block">{item.name}</span>
                     <span className="text-[11px] text-fb-muted">
-                      {item.category === 'Feed' ? 'Thức ăn chăn nuôi' : item.category === 'Fertilizer' ? 'Phân bón & Dinh dưỡng' : 'Dụng cụ'}
+                      {item.category === 'Feed' 
+                        ? 'Thức ăn chăn nuôi' 
+                        : item.category === 'Fertilizer' 
+                        ? 'Phân bón & Dinh dưỡng' 
+                        : 'Vật tư chuồng trại'}
                     </span>
                   </div>
                 </div>
@@ -171,7 +171,7 @@ export default function FeedInventory({
                     )}
                   </div>
 
-                  {/* Stock Level Bar */}
+                  {/* Thanh biểu thị mức tồn kho */}
                   <div className="w-24 bg-slate-200 h-1.5 rounded-full mt-1.5 overflow-hidden ml-auto">
                     <div
                       className={`h-full transition-all ${
